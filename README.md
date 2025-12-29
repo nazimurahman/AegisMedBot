@@ -1,1 +1,1 @@
-# marketing-content-generation
+# MCGAssistant
