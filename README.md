@@ -1,8 +1,5 @@
-MedicalChatbot/
-├── .github/
-│   └── workflows/
-│       ├── ci-cd.yml
-│       └── security-scan.yml
+AegisMedBot/
+│   
 ├── frontend/
 │   ├── app.py
 │   ├── components/
