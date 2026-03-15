@@ -1,0 +1,36 @@
+"""
+
+Frontend dependencies for AegisMedBot healthcare chatbot interface, including UI framework, 
+data visualization, HTTP communication, and security libraries. This file ensures that all 
+necessary packages are installed for the frontend to function correctly, providing a seamless
+user experience for healthcare professionals and patients interacting with the chatbot.
+
+"""
+
+# Core UI Framework
+gradio==4.7.0                    # Main UI framework for building the chat interface and dashboards
+plotly==5.18.0                    # Interactive data visualization library for charts and graphs
+pandas==2.1.0                      # Data manipulation and analysis for healthcare metrics
+numpy==1.24.0                       # Numerical computations for data processing
+
+# HTTP and API Communication
+requests==2.31.0                    # HTTP client for backend API communication
+httpx==0.25.0                        # Async HTTP client for WebSocket and streaming
+websockets==12.0                     # WebSocket client for real-time chat streaming
+
+# Data Processing and Validation
+python-dateutil==2.8.2              # Date parsing and manipulation for healthcare timestamps
+pytz==2023.3                         # Timezone handling for hospital schedules
+python-dotenv==1.0.0                  # Environment variable management
+
+# Security and Authentication
+pyjwt==2.8.0                          # JWT token handling for authentication
+cryptography==41.0.7                   # Encryption utilities for sensitive data
+
+# Monitoring and Logging
+loguru==0.7.2                          # Advanced logging with rotation and formatting
+prometheus-client==0.19.0               # Metrics collection for monitoring
+
+# Utilities
+pydantic==2.4.0                         # Data validation using Python type hints
+typing-extensions==4.8.0                 # Type hints for better code documentation
