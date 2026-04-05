@@ -1,0 +1,126 @@
+# ConfigMap for application configuration
+# ConfigMaps store non-sensitive configuration data as key-value pairs
+
+apiVersion: v1
+kind: ConfigMap
+# ConfigMap resource type - stores configuration data
+
+metadata:
+  name: app-config
+  # Name of this ConfigMap
+  
+  namespace: medintel
+  
+  labels:
+    app: aegismedbot
+    component: configuration
+    tier: backend
+
+data:
+  # Data section contains key-value pairs of configuration
+  
+  # API Configuration
+  API_V1_PREFIX: /api/v1
+  # API version prefix for all routes
+  
+  PROJECT_NAME: AegisMedBot
+  # Display name of the application
+  
+  ENVIRONMENT: production
+  # Deployment environment - affects logging and debugging
+  
+  DEBUG: "false"
+  # Disable debug mode in production for security and performance
+  
+  # Database Configuration
+  POSTGRES_SERVER: postgres-service
+  # PostgreSQL service name in Kubernetes (service discovery)
+  
+  POSTGRES_DB: aegismedbot
+  # Database name
+  
+  POSTGRES_PORT: "5432"
+  # PostgreSQL default port
+  
+  # Redis Configuration
+  REDIS_HOST: redis-service
+  # Redis service name in Kubernetes
+  
+  REDIS_PORT: "6379"
+  # Redis default port
+  
+  REDIS_DB: "0"
+  # Default Redis database number
+  
+  # Qdrant Vector Database Configuration
+  QDRANT_HOST: qdrant-service
+  # Qdrant service name
+  
+  QDRANT_PORT: "6333"
+  # Qdrant HTTP API port
+  
+  QDRANT_GRPC_PORT: "6334"
+  # Qdrant gRPC port for better performance
+  
+  QDRANT_COLLECTION: medical_knowledge
+  # Collection name for storing medical embeddings
+  
+  EMBEDDING_DIM: "768"
+  # Dimension of embeddings from BioBERT model
+  
+  # Model Configuration
+  TRANSFORMER_MODEL: microsoft/BiomedNLP-PubMedBERT-base-uncased-abstract-fulltext
+  # Pre-trained medical transformer model name
+  
+  MAX_SEQUENCE_LENGTH: "512"
+  # Maximum tokens per sequence for transformer model
+  
+  BATCH_SIZE: "32"
+  # Batch size for inference
+  
+  # Agent Configuration
+  MAX_AGENT_ITERATIONS: "5"
+  # Maximum number of agent interaction cycles
+  
+  AGENT_TIMEOUT_SECONDS: "30"
+  # Timeout per agent operation in seconds
+  
+  HUMAN_IN_LOOP_THRESHOLD: "0.7"
+  # Confidence threshold requiring human intervention
+  
+  # RAG Configuration
+  TOP_K_RETRIEVAL: "5"
+  # Number of documents to retrieve from vector store
+  
+  CHUNK_SIZE: "1000"
+  # Size of text chunks for vector indexing
+  
+  CHUNK_OVERLAP: "200"
+  # Overlap between chunks for context preservation
+  
+  SIMILARITY_THRESHOLD: "0.75"
+  # Minimum similarity score for retrieved documents
+  
+  # Monitoring Configuration
+  ENABLE_METRICS: "true"
+  # Enable Prometheus metrics collection
+  
+  METRICS_PORT: "9090"
+  # Port for exposing metrics endpoint
+  
+  LOG_LEVEL: INFO
+  # Logging level - INFO for production
+  
+  # Rate Limiting
+  RATE_LIMIT_REQUESTS: "100"
+  # Maximum requests per time period
+  
+  RATE_LIMIT_PERIOD: "60"
+  # Time period in seconds for rate limiting
+  
+  # Security Configuration
+  ACCESS_TOKEN_EXPIRE_MINUTES: "30"
+  # JWT access token expiration
+  
+  REFRESH_TOKEN_EXPIRE_DAYS: "7"
+  # Refresh token expiration in days

@@ -1,0 +1,119 @@
+# Qdrant vector database for storing and searching medical embeddings
+# Provides high-performance similarity search for RAG system
+
+apiVersion: apps/v1
+kind: Deployment
+
+metadata:
+  name: qdrant
+  namespace: medintel
+  labels:
+    app: aegismedbot
+    component: qdrant
+    tier: vector-database
+
+spec:
+  replicas: 1
+  # Qdrant can be scaled with clustering in production
+  
+  selector:
+    matchLabels:
+      app: aegismedbot
+      component: qdrant
+      tier: vector-database
+  
+  template:
+    metadata:
+      labels:
+        app: aegismedbot
+        component: qdrant
+        tier: vector-database
+      
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "6333"
+        prometheus.io/path: "/metrics"
+    
+    spec:
+      containers:
+      - name: qdrant
+        image: qdrant/qdrant:latest
+        # Qdrant vector database image
+        
+        imagePullPolicy: IfNotPresent
+        
+        ports:
+        - containerPort: 6333
+          # HTTP API port
+          name: http
+          protocol: TCP
+        
+        - containerPort: 6334
+          # gRPC port for better performance
+          name: grpc
+          protocol: TCP
+        
+        env:
+        - name: QDRANT__SERVICE__HTTP_PORT
+          value: "6333"
+        
+        - name: QDRANT__SERVICE__GRPC_PORT
+          value: "6334"
+        
+        - name: QDRANT__LOG_LEVEL
+          value: "INFO"
+        
+        - name: QDRANT__CLUSTER__ENABLED
+          value: "false"
+          # Disable clustering for single-node deployment
+        
+        resources:
+          requests:
+            memory: "2Gi"
+            # Qdrant needs significant memory for vector indices
+            cpu: "1"
+          limits:
+            memory: "4Gi"
+            cpu: "2"
+        
+        volumeMounts:
+        - name: qdrant-storage
+          mountPath: /qdrant/storage
+          # Storage for vector data
+        
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 6333
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        
+        readinessProbe:
+          httpGet:
+            path: /healthz
+            port: 6333
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+      
+      volumes:
+      - name: qdrant-storage
+        persistentVolumeClaim:
+          claimName: qdrant-pvc
+          # Use the premium SSD PVC for better performance
+      
+      # Node affinity for GPU nodes if available
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            preference:
+              matchExpressions:
+              - key: node-type
+                operator: In
+                values:
+                - compute
+                - gpu

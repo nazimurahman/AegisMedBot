@@ -1,0 +1,30 @@
+Medical Literature Database
+
+This directory contains peer-reviewed medical research articles, 
+clinical studies, and academic papers that provide evidence-based medical knowledge.
+Example Data Types:
+PubMed Central research papers (PMC format)
+Clinical trial results from major medical journals
+Systematic reviews and meta-analyses
+Case reports and case series
+Medical conference proceedings
+
+Example File json:
+
+{
+  "title": "Clinical Outcomes of Early Sepsis Detection Using AI",
+  "authors": ["Smith J", "Johnson A", "Williams R"],
+  "journal": "JAMA Internal Medicine",
+  "year": 2024,
+  "doi": "10.1001/jama.2024.12345",
+  "abstract": "This randomized controlled trial evaluated AI-based early sepsis detection...",
+  "key_findings": [
+    "Reduced mortality by 15 percent",
+    "Decreased ICU length of stay by 2.3 days",
+    "Improved early antibiotic administration by 45 minutes"
+  ],
+  "methodology": "Prospective randomized controlled trial with 500 patients",
+  "conclusions": "AI-assisted early warning systems significantly improve sepsis outcomes",
+  "pmid": "38456789",
+  "open_access": true
+}

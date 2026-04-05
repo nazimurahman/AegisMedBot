@@ -205,3 +205,346 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+
+"""
+Git ignore file for AegisMedBot
+Specifies which files and directories should be excluded from version control
+"""
+
+# ============================================================================
+# Python specific ignores
+# ============================================================================
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.pyd
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+cover/
+
+# ============================================================================
+# Virtual Environment
+# ============================================================================
+
+# Virtual Environment
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+.venv/
+
+# Poetry
+poetry.lock
+poetry.toml
+
+# ============================================================================
+# IDE and Editor files
+# ============================================================================
+
+# PyCharm
+.idea/
+*.iml
+.idea_modules/
+
+# VS Code
+.vscode/
+*.code-workspace
+.history/
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+# Spyder
+.spyproject/
+
+# Rope
+.ropeproject
+
+# ============================================================================
+# Jupyter Notebook
+# ============================================================================
+
+.ipynb_checkpoints/
+*.ipynb
+*.ipynb_checkpoints
+
+# ============================================================================
+# Environment variables and secrets
+# ============================================================================
+
+# Environment file
+.env
+.env.local
+.env.*.local
+
+# Secret files
+*.pem
+*.key
+*.crt
+*.p12
+secrets/
+keys/
+
+# ============================================================================
+# Database files
+# ============================================================================
+
+# PostgreSQL
+*.sql
+*.sqlite
+*.sqlite3
+*.db
+
+# Migration files
+alembic/versions/*.py
+!alembic/versions/__init__.py
+
+# ============================================================================
+# Model and training artifacts
+# ============================================================================
+
+# Model checkpoints
+*.pth
+*.pt
+*.bin
+*.h5
+*.hdf5
+*.onnx
+*.tflite
+
+# Training logs
+logs/
+training_logs/
+runs/
+wandb/
+mlruns/
+
+# Model cache
+model_cache/
+cache/
+
+# Tokenizer files
+tokenizer.json
+vocab.txt
+special_tokens_map.json
+
+# ============================================================================
+# Vector database files
+# ============================================================================
+
+# Qdrant storage
+qdrant_storage/
+vectors/
+
+# ChromaDB
+chroma_db/
+
+# ============================================================================
+# Data files
+# ============================================================================
+
+# Raw data
+data/raw/
+data/processed/
+data/interim/
+data/external/
+
+# Sample datasets
+*.csv
+*.xlsx
+*.parquet
+*.feather
+
+# Medical documents
+*.pdf
+*.docx
+*.epub
+
+# ============================================================================
+# Docker related
+# ============================================================================
+
+# Docker volumes
+docker/volumes/
+docker/nginx/ssl/
+
+# Docker compose overrides
+docker-compose.override.yml
+docker-compose.*.yml
+
+# ============================================================================
+# Kubernetes
+# ============================================================================
+
+# Kube config files
+.kube/
+kubeconfig
+*.kubeconfig
+
+# Helm charts
+charts/*.tgz
+
+# ============================================================================
+# Logs and temporary files
+# ============================================================================
+
+# Log files
+*.log
+logs/
+log/
+
+# Temporary files
+*.tmp
+*.temp
+*.swp
+*.swo
+*~
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+Desktop.ini
+
+# ============================================================================
+# Monitoring and metrics
+# ============================================================================
+
+# Prometheus data
+prometheus_data/
+prometheus/
+
+# Grafana data
+grafana_data/
+grafana/
+
+# Elasticsearch data
+elasticsearch_data/
+
+# ============================================================================
+# Documentation build
+# ============================================================================
+
+# Sphinx
+docs/_build/
+docs/api/
+
+# MkDocs
+site/
+
+# ============================================================================
+# Backup files
+# ============================================================================
+
+*.backup
+*.bak
+*.old
+*.orig
+
+# ============================================================================
+# Testing and benchmarking
+# ============================================================================
+
+# Performance test results
+*.prof
+*.lprof
+*.perf
+
+# Load testing reports
+*.html
+*.xml
+*.jtl
+
+# ============================================================================
+# CI/CD
+# ============================================================================
+
+# GitHub Actions
+.github/workflows/*.secret
+
+# GitLab CI
+.gitlab-ci.yml
+*.secret
+
+# ============================================================================
+# Development tools
+# ============================================================================
+
+# Pre-commit
+.pre-commit-config.local.yaml
+
+# Mypy
+.mypy_cache/
+
+# Pytest
+.pytest_cache/
+
+# Coverage
+.coverage
+.coverage.*
+
+# ============================================================================
+# Security and compliance
+# ============================================================================
+
+# PHI data (Patient Health Information)
+phi_data/
+protected_health_info/
+
+# Audit logs
+audit_logs/
+security_logs/
+
+# Encryption keys
+keys/
+certs/

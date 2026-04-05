@@ -1,0 +1,91 @@
+# Horizontal Pod Autoscaler for backend service
+# Automatically scales based on CPU and memory usage
+
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+
+metadata:
+  name: backend-hpa
+  namespace: medintel
+  labels:
+    app: aegismedbot
+    component: backend
+    tier: backend
+
+spec:
+  scaleTargetRef:
+    # Reference to the Deployment to scale
+    apiVersion: apps/v1
+    kind: Deployment
+    name: backend
+  
+  minReplicas: 2
+  # Minimum number of pods - maintain at least 2 for high availability
+  
+  maxReplicas: 10
+  # Maximum number of pods - scale up to 10 during high load
+  
+  metrics:
+  # Scale based on CPU utilization
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+        # Target 70% CPU utilization
+  
+  # Scale based on memory utilization
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80
+        # Target 80% memory utilization
+  
+  # Additional metric - HTTP requests per second
+  - type: Pods
+    pods:
+      metric:
+        name: http_requests_per_second
+      target:
+        type: AverageValue
+        averageValue: 100
+        # Scale if each pod handles >100 requests/second
+  
+  behavior:
+    # Scaling behavior configuration
+    
+    scaleDown:
+      # Scale down behavior
+      stabilizationWindowSeconds: 300
+      # Wait 5 minutes after scaling up before scaling down
+      
+      policies:
+      - type: Percent
+        value: 10
+        periodSeconds: 60
+        # Scale down by 10% every 60 seconds
+      
+      selectPolicy: Min
+      # Choose policy with smallest number of changes
+    
+    scaleUp:
+      # Scale up behavior
+      stabilizationWindowSeconds: 0
+      # Scale up immediately when needed
+      
+      policies:
+      - type: Percent
+        value: 100
+        periodSeconds: 30
+        # Double the pods every 30 seconds
+      
+      - type: Pods
+        value: 4
+        periodSeconds: 30
+        # Or add up to 4 pods every 30 seconds
+      
+      selectPolicy: Max
+      # Choose policy that results in largest scaling

@@ -1,0 +1,57 @@
+Clinical Practice Guidelines
+This directory contains standardized clinical protocols, treatment guidelines, and best practice 
+recommendations from authoritative medical organizations.
+
+Example Data Types:
+Specialty society guidelines (ACC, ASCO, IDSA, etc.)
+Government health agency protocols (CDC, WHO, NHS)
+Hospital-specific treatment protocols
+Clinical pathway documents
+Evidence-based medicine summaries
+
+Example File yaml:
+guideline_id: "IDSA-2024-PNEUMONIA-001"
+title: "Management of Community-Acquired Pneumonia in Adults"
+organization: "Infectious Diseases Society of America"
+version: "3.0"
+publication_date: "2024-01-15"
+last_review_date: "2024-01-15"
+next_review_date: "2027-01-15"
+
+key_recommendations:
+  - category: "Diagnosis"
+    recommendations:
+      - "Chest radiography recommended for all patients with suspected pneumonia"
+      - "Blood cultures recommended for patients requiring hospitalization"
+      - "Sputum cultures for patients with severe disease or risk factors for MRSA"
+  
+  - category: "Treatment"
+    severity_stratification:
+      - outpatient_no_comorbidities:
+          first_line: "Amoxicillin 1g three times daily for 5 days"
+          alternative: "Doxycycline 100mg twice daily for 5 days"
+      - outpatient_with_comorbidities:
+          first_line: "Amoxicillin-clavulanate 875mg twice daily PLUS azithromycin 500mg daily"
+          alternative: "Cephalosporin PLUS macrolide"
+      - inpatient_non_icu:
+          regimen: "Beta-lactam PLUS macrolide"
+          duration: "5-7 days"
+
+  - category: "Risk Assessment"
+    tools:
+      - "CURB-65 score for mortality risk"
+      - "PSI/PORT score for admission decisions"
+      - "qSOFA for sepsis identification"
+
+quality_indicators:
+  - "Time to first antibiotic dose less than 4 hours"
+  - "Blood cultures obtained before antibiotics"
+  - "Appropriate antibiotic selection based on risk factors"
+
+references:
+"""
+  - Metlay JP, et al. Diagnosis and Treatment of Adults with 
+    Community-acquired Pneumonia. Am J Respir Crit Care Med. 2019;200(7):e45-e67
+  - Mandell LA, et al. Infectious Diseases Society of America/American Thoracic Society
+    Consensus Guidelines. Clin Infect Dis. 2007;44(Suppl 2):S27-S72
+"""

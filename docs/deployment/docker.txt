@@ -1,0 +1,511 @@
+================================================================================
+AEGISMEDBOT DOCKER DEPLOYMENT GUIDE
+================================================================================
+
+This document provides comprehensive instructions for deploying the AegisMedBot
+platform using Docker and Docker Compose in various environments.
+
+================================================================================
+DOCKER ARCHITECTURE OVERVIEW
+================================================================================
+
+The AegisMedBot platform runs as multiple Docker containers that communicate
+through an internal network. Each service runs in its own container with
+isolated dependencies.
+
+Container Roles
+
+The PostgreSQL container runs the primary database. It stores patient records,
+admission data, lab results, and audit logs. The container uses a persistent
+volume to preserve data between restarts. PostgreSQL version 15 is used for
+its stability and performance features.
+
+The Redis container provides high speed caching. It stores conversation state,
+session data, and temporary results. Redis version 7 is used for its improved
+performance and RedisJSON module support. The container is configured with
+persistence to disk so cache survives container restarts.
+
+The Qdrant container manages the vector database for semantic search. It
+stores document embeddings and performs similarity searches. Qdrant version
+1.7 is used for its efficient HNSW indexing and filtering capabilities.
+
+The Backend container runs the FastAPI application. This container orchestrates
+agents, processes requests, and manages the API. The container uses Python 3.11
+with all dependencies pre installed. It exposes port 8000 for API access.
+
+The Frontend container runs the Gradio application. It provides the chat
+interface and dashboards. The container uses Python 3.11 with Gradio and
+Plotly. It exposes port 7860 for web access.
+
+The Nginx container acts as a reverse proxy and load balancer. It terminates
+TLS, routes requests to appropriate services, and serves static files. Nginx
+version 1.24 is used for its performance and security features.
+
+The Prometheus container collects metrics from all services. It scrapes
+endpoints every 15 seconds and stores time series data. The container uses
+a persistent volume for metrics storage.
+
+The Grafana container visualizes metrics from Prometheus. It provides
+dashboards for monitoring system health and performance. The container
+is configured with data sources and dashboards at startup.
+
+The Elasticsearch container stores logs for searching and analysis. It
+indexes all application logs and audit events. Version 8.10 is used for
+its improved performance and security features.
+
+The Kibana container provides a web interface for searching logs. It queries
+Elasticsearch and displays results in a user friendly interface.
+
+================================================================================
+DOCKER COMPOSE CONFIGURATION DETAILS
+================================================================================
+
+The docker compose.yml file defines all services and their relationships.
+
+Service Definitions Section
+Each service has a name under the services key. The PostgreSQL service
+is named postgres. The Redis service is named redis. This naming is used
+for internal DNS resolution.
+
+Image Specification
+Each service specifies the Docker image to use. For standard services like
+PostgreSQL, the official image from Docker Hub is used with a specific tag.
+For custom services like backend and frontend, the build directive points
+to a Dockerfile in the docker directory.
+
+Environment Variables
+Services receive configuration through environment variables. These are
+defined under the environment key. Sensitive values like passwords are
+not hardcoded but reference variables from the .env file using the
+syntax variable name.
+
+Port Mapping
+Ports are mapped from the container to the host using the ports key.
+The left side is the host port. The right side is the container port.
+For example, 5432:5432 maps host port 5432 to container port 5432.
+
+Volume Mounts
+Persistent data uses Docker volumes. Named volumes like postgres_data
+are declared in the volumes section at the bottom of the file. These
+volumes persist even when containers are removed.
+
+Bind mounts are used for development. The backend container mounts the
+local backend directory into the container. This allows code changes to
+take effect without rebuilding the image.
+
+Network Configuration
+All services connect to the medintel network defined at the bottom.
+This network is bridge type, allowing containers to communicate by
+service name. For example, the backend can connect to postgres as a
+hostname.
+
+Health Checks
+Each service includes a healthcheck directive. This tells Docker Compose
+how to test if the service is ready. PostgreSQL healthcheck uses pg_isready.
+Redis healthcheck uses redis-cli ping. The backend healthcheck uses curl
+to hit the health endpoint.
+
+Dependency Management
+The depends_on directive ensures services start in the correct order.
+The backend depends on postgres, redis, and qdrant. This means these
+databases start before the backend attempts to connect.
+
+================================================================================
+DOCKERFILE DETAILS
+================================================================================
+
+Each custom service has a Dockerfile that defines its container image.
+
+Backend Dockerfile Analysis
+The backend Dockerfile starts with FROM python:3.11-slim. This uses the
+official Python image based on Debian. The slim variant is smaller than
+full but includes essential build tools.
+
+The WORKDIR directive sets /app as the working directory. All subsequent
+commands run from this directory.
+
+RUN apt-get update installs system dependencies. The gcc and g++ packages
+are needed for compiling some Python packages. The postgresql-client is
+used for database management commands.
+
+The COPY commands copy requirements files from the host into the container.
+There are two requirements files. One for the backend and one for ML training.
+
+RUN pip install installs all Python dependencies. The --no-cache-dir flag
+prevents pip from caching packages, reducing image size.
+
+The second COPY command copies all application code into the container.
+This includes backend code, agents, rag system, and ml training code.
+
+ENV PYTHONPATH sets the Python path so modules can be imported correctly.
+The value is /app which is the root of the application code.
+
+EXPOSE 8000 documents that the container listens on port 8000. This is
+informational and does not actually publish the port.
+
+CMD defines the command to run when the container starts. It runs uvicorn
+with the backend main app on host 0.0.0.0 port 8000.
+
+Frontend Dockerfile Analysis
+The frontend Dockerfile is similar but simpler. It only copies the frontend
+directory and installs frontend specific dependencies.
+
+The CMD runs python app.py to start the Gradio application.
+
+Multi Stage Builds
+For production, consider using multi stage builds. The first stage builds
+dependencies. The second stage copies only the built artifacts. This
+drastically reduces image size.
+
+A multi stage backend Dockerfile would have a builder stage that installs
+dependencies and compiles any native code. The final stage copies only the
+site packages directory and the application code, not the build tools.
+
+================================================================================
+DEVELOPMENT DEPLOYMENT
+================================================================================
+
+Development deployment uses Docker Compose with configuration optimized for
+coding and debugging.
+
+Starting Development Environment
+Run docker compose up from the project root. Without the -d flag, logs from
+all services stream to the terminal. Press Ctrl C to stop all services.
+
+For background execution, use docker compose up -d. Logs can be viewed with
+docker compose logs service_name.
+
+The development configuration includes volume mounts for code directories.
+Changes to Python files in the backend directory are reflected immediately
+because uvicorn has reload enabled.
+
+Viewing Logs
+To see logs from a specific service, run docker compose logs backend. Add
+the -f flag to follow logs in real time.
+
+For debugging, set LOG_LEVEL=DEBUG in the .env file. This increases log
+verbosity and helps identify issues.
+
+Accessing Services
+The backend API is at http://localhost:8000. The API documentation is at
+http://localhost:8000/api/docs. The frontend chat interface is at
+http://localhost:7860.
+
+Grafana is at http://localhost:3000 with username admin and password admin.
+Prometheus is at http://localhost:9090.
+
+Database Access
+Connect to PostgreSQL using psql -h localhost -U medintel -d medintel.
+The password is from the .env file.
+
+Connect to Redis using redis-cli -h localhost -a your_redis_password.
+The -a flag provides authentication.
+
+Connect to Qdrant using curl http://localhost:6333/collections to list
+collections.
+
+Stopping Development Environment
+Run docker compose down to stop all containers. Add the -v flag to remove
+volumes and delete all data. Use this cautiously as it removes databases.
+
+For a clean restart, run docker compose down -v followed by docker compose
+up -d. This starts fresh with empty databases.
+
+================================================================================
+PRODUCTION DEPLOYMENT
+================================================================================
+
+Production deployment requires additional security and reliability measures.
+
+Production Docker Compose Override
+Create a docker compose.prod.yml file that overrides development settings.
+This file disables volume mounts for code, sets environment to production,
+and adds resource limits.
+
+The production override should set ENVIRONMENT=production in all services.
+This disables debug mode and reloading.
+
+Resource limits should be added to each service. The backend needs memory
+limit of 2 gigabytes and CPU limit of 1 core. The frontend needs 512
+megabytes and 0.5 cores. Databases need appropriate limits based on data
+size.
+
+Security Hardening
+Remove development volume mounts. Code should be baked into the image
+rather than mounted at runtime. This prevents accidental code changes
+in production.
+
+Use Docker secrets for sensitive data instead of environment variables.
+Secrets are mounted as files and never appear in logs.
+
+Enable Docker Content Trust to verify image signatures. Set
+DOCKER_CONTENT_TRUST=1 in the environment.
+
+Run containers as non root users. Each Dockerfile should create a user
+and switch to that user before running the application.
+
+Networking Security
+Create an external network that is not shared with other applications.
+Use network policies to restrict communication between services.
+
+Place the database containers on a separate network that is not accessible
+from the host. Only the backend container should reach the databases.
+
+Use TLS everywhere. Terminate TLS at the Nginx container. Internal
+communication between containers can use HTTP because it is on a private
+network.
+
+Health Checks and Restarts
+Configure restart policies for production. Set restart: always for all
+services. This ensures containers restart automatically if they crash.
+
+Healthcheck directives should be aggressive. PostgreSQL healthcheck interval
+10 seconds. Backend healthcheck interval 30 seconds with timeout 10 seconds.
+
+If a service fails health checks repeatedly, Docker Compose will restart it.
+The number of retries is configurable.
+
+================================================================================
+DATABASE MANAGEMENT WITH DOCKER
+================================================================================
+
+Managing databases in Docker containers requires special consideration.
+
+Backup and Restore
+Back up PostgreSQL with docker exec postgres pg_dump -U medintel medintel
+greater than backup.sql. This runs pg_dump inside the container and saves
+the output to a file on the host.
+
+Restore from backup with cat backup.sql docker exec -i postgres psql -U
+medintel medintel. The -i flag reads from stdin.
+
+Automate backups with a cron job or a scheduled task. Run the backup command
+daily and store backups in cloud storage.
+
+Database Migration in Production
+Apply migrations as part of deployment. After starting the new backend
+container but before routing traffic, run docker exec backend poetry run
+alembic upgrade head.
+
+For zero downtime migrations, use a two phase approach. First start new
+containers that are compatible with both old and new schema. After migrations
+complete, remove old containers.
+
+Redis Persistence Configuration
+Redis persistence is configured through the command line. The docker compose
+file includes command redis-server --appendonly yes. This enables Append
+Only File persistence which logs every write operation.
+
+Redis also supports RDB snapshots. By default, Redis saves the database to
+disk every 60 seconds if at least 1000 keys changed.
+
+For production, configure both persistence methods. The AOF file provides
+durability while RDB snapshots provide faster recovery.
+
+Qdrant Storage Configuration
+Qdrant stores vectors in the /qdrant/storage directory. This is mounted as
+a Docker volume. The storage directory contains collections, indexes, and
+payload data.
+
+Qdrant performance depends on storage speed. Use SSD storage for production.
+Network attached storage is too slow for acceptable performance.
+
+================================================================================
+LOGGING AND MONITORING
+================================================================================
+
+Production logging requires aggregation and centralization.
+
+Logging Drivers
+Configure Docker to use the json-file logging driver with limits.
+Set logging driver json-file options max-size 10m and max-file 3.
+This prevents logs from consuming all disk space.
+
+For centralized logging, use the fluentd or splunk logging driver.
+These ship logs directly to aggregation systems.
+
+Log Aggregation with ELK
+The docker compose file includes Elasticsearch and Kibana. In production,
+these should run on dedicated hosts not on the same Docker network.
+
+Configure the backend to log in JSON format. Structured JSON logs are
+easier to search in Elasticsearch than plain text.
+
+Each log line should include service name, timestamp, log level, and
+message. Add correlation IDs to trace requests across services.
+
+Metrics Collection
+Prometheus scrapes metrics from endpoints. The backend exposes metrics
+at the /metrics endpoint. This endpoint returns Prometheus format metrics.
+
+Key metrics to monitor include request rate, error rate, latency percentiles,
+agent confidence scores, and database connection pool size.
+
+Set up Grafana dashboards for each service. Create alerts for error rate
+spikes, high latency, and low confidence scores.
+
+================================================================================
+SCALING WITH DOCKER COMPOSE
+================================================================================
+
+Docker Compose has limited scaling capabilities compared to Kubernetes.
+
+Scaling Backend Instances
+Run multiple backend instances with docker compose up --scale backend=3.
+Docker Compose starts three backend containers. Nginx load balances
+between them.
+
+Scaling requires that containers are stateless. The backend uses Redis
+for session state, so multiple instances can run simultaneously.
+
+Scaling Databases
+Docker Compose does not support database clustering. For production
+scaling, use managed database services or deploy separate database clusters.
+
+Consider using PostgreSQL replication with a primary and multiple replicas.
+Configure the backend to write to the primary and read from replicas.
+
+Resource Allocation
+Each container gets default resource allocation. Override this with
+deploy resources limits in the docker compose.yml file.
+
+Set memory limits to prevent containers from using too much memory.
+Set CPU limits to ensure fair sharing between services.
+
+For the backend, memory limit of 2 gigabytes is usually sufficient.
+For Qdrant, memory limit of 4 gigabytes is recommended for large
+collections.
+
+================================================================================
+DOCKER SECURITY BEST PRACTICES
+================================================================================
+
+Follow these security practices for Docker deployments.
+
+Image Security
+Use official images from trusted sources. The official PostgreSQL image
+from Docker Hub is maintained by the PostgreSQL team. Third party images
+may contain vulnerabilities.
+
+Scan images for vulnerabilities using docker scan. This uses Snyk to
+identify known vulnerabilities in the image.
+
+Rebuild images regularly to include security updates. Do not run containers
+with outdated base images.
+
+Runtime Security
+Run containers as non root users. The backend Dockerfile creates a user
+and switches to it. This limits damage if an attacker compromises the
+container.
+
+Drop unnecessary Linux capabilities. The security_opt in docker compose
+can drop all capabilities and add only needed ones.
+
+Set read only root filesystem when possible. The backend container does
+not need to write to its own filesystem. All writes go to volumes.
+
+Network Security
+Do not expose database ports to the host. The PostgreSQL port should only
+be accessible to other containers, not to the host network.
+
+Use Docker networks to isolate services. Place databases on a network
+that only backend containers can access.
+
+Enable encryption between services using mutual TLS. This requires a
+service mesh like Istio which is beyond Docker Compose capabilities.
+
+Secret Management
+Never hardcode secrets in Dockerfiles or docker compose files. Use
+environment variables from the .env file which is not committed to Git.
+
+For production, use Docker secrets. Secrets are stored in the Docker
+Swarm secret store and mounted as files in containers.
+
+Rotate secrets regularly. The database password should change every
+90 days. The JWT secret key should change every 30 days.
+
+================================================================================
+TROUBLESHOOTING DOCKER DEPLOYMENTS
+================================================================================
+
+Common issues and their solutions.
+
+Container Fails to Start
+Check the logs with docker compose logs service_name. Look for error
+messages that indicate the problem.
+
+Common causes include port conflicts, missing environment variables,
+and incorrect volume mounts.
+
+Fix port conflicts by changing the host port mapping. For example, if
+port 5432 is already used, map 5433:5432 instead.
+
+Database Connection Failures
+The backend may start before PostgreSQL is ready. The healthcheck and
+depends_on help but are not perfect. Add retry logic to the backend
+connection code.
+
+Check that the database credentials in .env match those expected by
+PostgreSQL. The POSTGRES_PASSWORD in .env must match the password set
+when the container was created.
+
+Out of Memory Errors
+Containers may exceed memory limits. Check docker stats to see memory
+usage. Increase memory limits in the docker compose.yml file.
+
+The transformer models are memory intensive. The backend may need 4
+gigabytes instead of 2 gigabytes for large models.
+
+Disk Space Issues
+Docker stores images, containers, and volumes in /var/lib/docker. This
+partition can fill up. Clean up unused images with docker system prune -a.
+
+Logs can consume disk space. Configure log rotation as described in the
+logging section. Set max-size to 10 megabytes and max-file to 3.
+
+Network Issues
+Containers may not be able to communicate. Verify they are on the same
+network with docker network inspect medintel.
+
+Test connectivity with docker exec backend ping postgres. If ping fails,
+the containers are not on the same network or the DNS resolution is broken.
+
+================================================================================
+PRODUCTION READINESS CHECKLIST
+================================================================================
+
+Before deploying to production, verify these items.
+
+Security Checklist
+All default passwords changed
+No development volume mounts in production compose file
+Docker Content Trust enabled
+Images scanned for vulnerabilities
+Containers run as non root users
+Secrets stored in Docker secrets or external vault
+TLS configured for all public endpoints
+Rate limiting enabled on API endpoints
+
+Reliability Checklist
+Restart policies set to always
+Health checks configured for all services
+Resource limits set for all containers
+Database backups configured and tested
+Monitoring and alerting configured
+Log aggregation configured
+Graceful shutdown handling implemented
+
+Performance Checklist
+Connection pooling configured for databases
+Redis cache configured with appropriate memory limit
+Qdrant indexes optimized for query patterns
+Backend instances scaled based on expected load
+Static files served by Nginx not by backend
+
+Operations Checklist
+Deployment playbook documented
+Rollback procedure tested
+On call rotation established
+Runbooks for common incidents created
+Disaster recovery plan tested
+Compliance documentation completed

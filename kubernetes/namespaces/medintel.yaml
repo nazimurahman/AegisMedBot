@@ -1,0 +1,131 @@
+# Kubernetes Namespace definition for isolating AegisMedBot resources
+# Namespaces provide virtual clustering and resource isolation within a cluster
+
+apiVersion: v1
+# API version for Namespace resource - v1 is the stable version
+kind: Namespace
+# Resource type: Namespace - creates a logical separation of resources
+
+metadata:
+  # Metadata section for identifying the Namespace
+  name: medintel
+  # Unique identifier for this Namespace within the cluster
+  
+  labels:
+    # Labels are key-value pairs used for organizing and selecting resources
+    name: medintel
+    # Label identifying the namespace by name
+    
+    environment: production
+    # Label indicating this is for production workloads
+    
+    app: aegismedbot
+    # Label associating this namespace with the AegisMedBot application
+    
+    tier: backend
+    # Label indicating backend tier resources belong here
+
+---
+# YAML document separator - starts a new resource definition
+
+apiVersion: v1
+kind: ResourceQuota
+# ResourceQuota limits total resource consumption within the namespace
+
+metadata:
+  name: medintel-quota
+  # Name of this ResourceQuota resource
+  
+  namespace: medintel
+  # Namespace where this quota applies
+
+spec:
+  # Specification of resource limits
+  
+  hard:
+    # Hard limits that cannot be exceeded
+    
+    requests.cpu: 20
+    # Maximum total CPU requests across all pods in cores
+    # This ensures we don't overcommit CPU resources
+    
+    requests.memory: 40Gi
+    # Maximum total memory requests across all pods
+    
+    limits.cpu: 40
+    # Maximum total CPU limits across all pods
+    # This is the absolute maximum CPU usage allowed
+    
+    limits.memory: 80Gi
+    # Maximum total memory limits across all pods
+    
+    pods: 50
+    # Maximum number of pods that can run in this namespace
+    
+    services: 20
+    # Maximum number of services that can be created
+    
+    persistentvolumeclaims: 10
+    # Maximum number of PersistentVolumeClaims allowed
+    
+    configmaps: 30
+    # Maximum number of ConfigMaps allowed
+    
+    secrets: 30
+    # Maximum number of Secrets allowed
+
+---
+apiVersion: v1
+kind: LimitRange
+# LimitRange sets default resource limits for pods in the namespace
+
+metadata:
+  name: medintel-limits
+  # Name of this LimitRange resource
+  
+  namespace: medintel
+
+spec:
+  # Specification for default resource limits
+  
+  limits:
+    # List of limit configurations
+    
+    - type: Container
+      # This limit applies to containers within pods
+      
+      default:
+        # Default limits applied when not specified in pod spec
+        
+        cpu: 500m
+        # 500 millicores = 0.5 CPU cores default
+        
+        memory: 512Mi
+        # 512 Mebibytes default memory limit
+        
+      defaultRequest:
+        # Default requests applied when not specified
+        
+        cpu: 200m
+        # 200 millicores = 0.2 CPU cores default request
+        
+        memory: 256Mi
+        # 256 Mebibytes default memory request
+        
+      max:
+        # Maximum limits allowed for any container
+        
+        cpu: 2
+        # No container can request more than 2 CPU cores
+        
+        memory: 4Gi
+        # No container can request more than 4 GiB memory
+        
+      min:
+        # Minimum limits required for any container
+        
+        cpu: 50m
+        # Minimum 50 millicores required
+        
+        memory: 64Mi
+        # Minimum 64 MiB memory required

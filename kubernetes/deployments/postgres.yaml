@@ -1,0 +1,230 @@
+# PostgreSQL database deployment for storing structured data
+# Includes patients, admissions, vitals, and audit logs
+
+apiVersion: apps/v1
+kind: Deployment
+# Deployment manages a set of replica pods with declarative updates
+
+metadata:
+  name: postgres
+  # Deployment name
+  
+  namespace: medintel
+  
+  labels:
+    app: aegismedbot
+    component: postgres
+    tier: database
+
+spec:
+  replicas: 1
+  # PostgreSQL runs as a single master - no horizontal scaling needed
+  
+  selector:
+    # Selector to identify which pods belong to this deployment
+    
+    matchLabels:
+      app: aegismedbot
+      component: postgres
+      tier: database
+  
+  template:
+    # Pod template for creating pods
+    
+    metadata:
+      labels:
+        app: aegismedbot
+        component: postgres
+        tier: database
+      
+      annotations:
+        # Annotations provide additional metadata
+        
+        prometheus.io/scrape: "true"
+        # Enable Prometheus to scrape metrics
+        
+        prometheus.io/port: "9187"
+        # Port where PostgreSQL exporter runs
+        
+        prometheus.io/path: "/metrics"
+        # Metrics endpoint path
+    
+    spec:
+      # Pod specification
+      
+      containers:
+      - name: postgres
+        # Container name
+        
+        image: postgres:15-alpine
+        # Official PostgreSQL 15 image on Alpine Linux
+        
+        imagePullPolicy: IfNotPresent
+        # Pull image if not present locally
+        
+        ports:
+        - containerPort: 5432
+          # PostgreSQL default port
+          name: postgres
+          protocol: TCP
+        
+        env:
+        # Environment variables for configuration
+        
+        - name: POSTGRES_USER
+          # Database user name
+          valueFrom:
+            secretKeyRef:
+              name: db-secrets
+              key: postgres_user
+              # Reference secret value
+        
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: db-secrets
+              key: postgres_password
+        
+        - name: POSTGRES_DB
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: POSTGRES_DB
+        
+        - name: POSTGRES_INITDB_ARGS
+          value: "--auth-host=scram-sha-256"
+          # Use SCRAM-SHA-256 authentication for security
+        
+        - name: PGDATA
+          value: /var/lib/postgresql/data/pgdata
+          # Data directory location
+        
+        resources:
+          # Resource allocation
+          
+          requests:
+            memory: "1Gi"
+            # Memory request - Kubernetes will schedule on nodes with this available
+            cpu: "500m"
+            # CPU request - 0.5 cores
+            
+          limits:
+            memory: "2Gi"
+            # Maximum memory allowed
+            cpu: "1"
+            # Maximum CPU allowed - 1 core
+        
+        volumeMounts:
+        # Mount persistent storage
+        
+        - name: postgres-storage
+          mountPath: /var/lib/postgresql/data
+          # Mount point inside container
+          subPath: postgres
+          # Subdirectory to use within the volume
+        
+        - name: postgres-config
+          mountPath: /docker-entrypoint-initdb.d
+          # Mount initialization scripts
+        
+        livenessProbe:
+          # Checks if container is alive
+            
+          exec:
+            command:
+            - pg_isready
+            - -U
+            - $(POSTGRES_USER)
+            - -d
+            - $(POSTGRES_DB)
+            # PostgreSQL readiness check command
+            
+          initialDelaySeconds: 30
+          # Wait 30 seconds before first check
+          
+          periodSeconds: 10
+          # Check every 10 seconds
+          
+          timeoutSeconds: 5
+          # Timeout after 5 seconds
+          
+          failureThreshold: 3
+          # Allow 3 failures before restart
+        
+        readinessProbe:
+          # Checks if container is ready to accept traffic
+          
+          exec:
+            command:
+            - pg_isready
+            - -U
+            - $(POSTGRES_USER)
+            - -d
+            - $(POSTGRES_DB)
+            
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 5
+          failureThreshold: 3
+      
+      - name: postgres-exporter
+        # Sidecar container for PostgreSQL metrics
+        
+        image: prometheuscommunity/postgres-exporter:latest
+        
+        ports:
+        - containerPort: 9187
+          name: metrics
+          protocol: TCP
+        
+        env:
+        - name: DATA_SOURCE_NAME
+          value: "postgresql://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@localhost:5432/$(POSTGRES_DB)?sslmode=disable"
+          # Connection string for PostgreSQL
+        
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "256Mi"
+            cpu: "200m"
+      
+      volumes:
+      - name: postgres-storage
+        # Persistent storage volume
+        
+        persistentVolumeClaim:
+          claimName: postgres-pvc
+          # Reference to the PVC created earlier
+      
+      - name: postgres-config
+        # ConfigMap for initialization scripts
+        
+        configMap:
+          name: postgres-init-config
+          optional: true
+          # ConfigMap can be optional if not needed
+      
+      # Node and pod scheduling preferences
+      affinity:
+        podAntiAffinity:
+          # Ensure PostgreSQL pods are not scheduled together
+          
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchLabels:
+                  app: aegismedbot
+                  component: postgres
+              topologyKey: kubernetes.io/hostname
+              # Spread across different nodes
+      
+      # Tolerations for node taints
+      tolerations:
+      - key: "database"
+        operator: "Equal"
+        value: "true"
+        effect: "NoSchedule"
+        # Allow scheduling on nodes dedicated to databases

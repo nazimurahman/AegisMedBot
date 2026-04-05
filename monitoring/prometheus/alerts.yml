@@ -1,0 +1,334 @@
+"""
+Alert Rules Configuration for Prometheus
+This file defines alert conditions that trigger notifications when metrics exceed thresholds.
+Alerts are organized into groups for better management and routing.
+"""
+
+# Groups of alert rules
+groups:
+  
+  # Group 1: Application Performance Alerts
+  - name: application_performance
+    interval: 30s  # Evaluate these rules every 30 seconds
+    rules:
+      
+      # Alert 1: High Error Rate
+      - alert: HighErrorRate
+        expr: |
+          # Calculate error rate as percentage of total requests with 5xx status codes
+          rate(http_requests_total{status=~"5.."}[5m]) 
+          / 
+          rate(http_requests_total[5m]) 
+          * 100 
+          > 5
+        for: 5m  # Alert triggers after condition persists for 5 minutes
+        labels:
+          severity: critical  # Alert severity level
+          component: backend
+        annotations:
+          summary: "High error rate detected"
+          description: |
+            Error rate is {{ $value | printf "%.2f" }}% for the last 5 minutes.
+            This indicates service degradation that may affect user experience.
+            Check application logs for error details.
+          runbook: "https://wiki.medintel.com/runbooks/high-error-rate"
+      
+      # Alert 2: High Latency
+      - alert: HighLatency
+        expr: |
+          # Calculate 95th percentile response time
+          histogram_quantile(0.95, 
+            rate(http_request_duration_seconds_bucket[5m])
+          ) > 2
+        for: 5m
+        labels:
+          severity: warning
+          component: backend
+        annotations:
+          summary: "High latency detected"
+          description: |
+            API response latency is {{ $value | printf "%.2f" }} seconds (95th percentile).
+            Response times above 2 seconds impact user experience.
+            Consider scaling the service or investigating bottlenecks.
+      
+      # Alert 3: High Request Volume
+      - alert: HighRequestVolume
+        expr: |
+          rate(http_requests_total[1m]) > 1000
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Unusually high request volume"
+          description: |
+            Current request rate is {{ $value | printf "%.0f" }} requests/second.
+            This may indicate a DDoS attack or a sudden spike in usage.
+            Check if this is expected traffic or requires intervention.
+      
+      # Alert 4: Slow Database Queries
+      - alert: SlowDatabaseQueries
+        expr: |
+          histogram_quantile(0.95, 
+            rate(pg_stat_database_query_duration_seconds_bucket[5m])
+          ) > 1
+        for: 10m
+        labels:
+          severity: warning
+          component: database
+        annotations:
+          summary: "Slow database queries detected"
+          description: |
+            Database query latency is {{ $value | printf "%.2f" }} seconds.
+            Slow queries may be causing application performance issues.
+            Review query execution plans and optimize indexes.
+  
+  # Group 2: Agent Performance Alerts
+  - name: agent_performance
+    interval: 30s
+    rules:
+      
+      # Alert 5: Agent Failure
+      - alert: AgentFailure
+        expr: |
+          # Track agent failures over the last 5 minutes
+          increase(agent_failures_total[5m]) > 5
+        for: 2m
+        labels:
+          severity: critical
+          component: agent
+        annotations:
+          summary: "Agent failure detected"
+          description: |
+            Agent {{ $labels.agent_name }} has failed {{ $value }} times in the last 5 minutes.
+            This may indicate a model loading issue, memory pressure, or configuration error.
+            Check agent logs for specific error messages.
+      
+      # Alert 6: Low Confidence Responses
+      - alert: LowConfidenceResponses
+        expr: |
+          # Average confidence score across all agents
+          avg(agent_response_confidence) < 0.7
+        for: 10m
+        labels:
+          severity: warning
+          component: agent
+        annotations:
+          summary: "Low confidence responses"
+          description: |
+            Average agent confidence is {{ $value | printf "%.2f" }} over the last 10 minutes.
+            Low confidence may indicate queries outside training domain or degraded model performance.
+            Consider reviewing recent queries and model drift.
+      
+      # Alert 7: Agent Timeout
+      - alert: AgentTimeout
+        expr: |
+          # Agent processing time exceeding threshold
+          agent_processing_time_seconds > 30
+        for: 2m
+        labels:
+          severity: critical
+          component: agent
+        annotations:
+          summary: "Agent processing timeout"
+          description: |
+            Agent {{ $labels.agent_name }} is taking {{ $value | printf "%.2f" }} seconds to respond.
+            This exceeds the 30-second SLA. Investigate if the agent is stuck or processing large inputs.
+      
+      # Alert 8: Tool Call Failures
+      - alert: ToolCallFailures
+        expr: |
+          rate(agent_tool_failures_total[10m]) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+          component: tools
+        annotations:
+          summary: "Tool call failures detected"
+          description: |
+            Tool {{ $labels.tool_name }} is failing at rate {{ $value | printf "%.2f" }} calls/second.
+            This may indicate API rate limits, authentication issues, or service unavailability.
+  
+  # Group 3: Infrastructure Alerts
+  - name: infrastructure
+    interval: 30s
+    rules:
+      
+      # Alert 9: Database Connection Issues
+      - alert: DatabaseConnectionLost
+        expr: pg_up == 0
+        for: 1m
+        labels:
+          severity: critical
+          component: database
+        annotations:
+          summary: "Database connection lost"
+          description: |
+            Cannot connect to PostgreSQL database.
+            Check database pod status and network connectivity.
+            Application functionality will be severely impacted.
+      
+      # Alert 10: Redis Down
+      - alert: RedisDown
+        expr: redis_up == 0
+        for: 1m
+        labels:
+          severity: critical
+          component: cache
+        annotations:
+          summary: "Redis cache is down"
+          description: |
+            Redis instance is not responding to health checks.
+            Session caching and rate limiting will be affected.
+            Application may experience degraded performance.
+      
+      # Alert 11: Qdrant Vector Database Issues
+      - alert: QdrantUnhealthy
+        expr: qdrant_health_status != 1
+        for: 2m
+        labels:
+          severity: critical
+          component: vector_db
+        annotations:
+          summary: "Qdrant vector database unhealthy"
+          description: |
+            Qdrant health check failed. RAG functionality will be unavailable.
+            Check Qdrant logs for detailed error messages.
+      
+      # Alert 12: High Memory Usage
+      - alert: HighMemoryUsage
+        expr: |
+          # Memory usage percentage for pods
+          (
+            sum(container_memory_working_set_bytes) 
+            by (pod, namespace)
+            / 
+            sum(container_spec_memory_limit_bytes) 
+            by (pod, namespace)
+          ) * 100 > 85
+        for: 5m
+        labels:
+          severity: warning
+          component: infrastructure
+        annotations:
+          summary: "High memory usage detected"
+          description: |
+            Pod {{ $labels.pod }} is using {{ $value | printf "%.1f" }}% of its memory limit.
+            Consider increasing memory limits or investigating memory leaks.
+      
+      # Alert 13: High CPU Usage
+      - alert: HighCPUUsage
+        expr: |
+          rate(container_cpu_usage_seconds_total[5m]) 
+          / 
+          container_spec_cpu_quota 
+          * 100 > 80
+        for: 5m
+        labels:
+          severity: warning
+          component: infrastructure
+        annotations:
+          summary: "High CPU usage detected"
+          description: |
+            Pod {{ $labels.pod }} is using {{ $value | printf "%.1f" }}% of its CPU quota.
+            Consider increasing CPU limits or scaling horizontally.
+      
+      # Alert 14: Disk Space Critical
+      - alert: DiskSpaceCritical
+        expr: |
+          (
+            1 - (node_filesystem_avail_bytes / node_filesystem_size_bytes)
+          ) * 100 > 85
+        for: 10m
+        labels:
+          severity: critical
+          component: storage
+        annotations:
+          summary: "Disk space critical"
+          description: |
+            Disk usage is at {{ $value | printf "%.1f" }}% on {{ $labels.device }}.
+            Clean up old logs and temporary files to prevent application failures.
+  
+  # Group 4: Business Metrics Alerts
+  - name: business_metrics
+    interval: 5m  # Longer interval for business metrics
+    rules:
+      
+      # Alert 15: User Engagement Drop
+      - alert: LowUserEngagement
+        expr: |
+          sum_over_time(active_users_count[1h]) < 10
+        for: 30m
+        labels:
+          severity: info
+          component: business
+        annotations:
+          summary: "Low user engagement detected"
+          description: |
+            Only {{ $value }} active users in the last hour.
+            This may indicate usability issues or system availability problems.
+            Review user feedback and system logs.
+      
+      # Alert 16: High Human Escalation Rate
+      - alert: HighEscalationRate
+        expr: |
+          rate(agent_human_escalations_total[1h]) 
+          / 
+          rate(agent_requests_total[1h]) 
+          * 100 > 20
+        for: 30m
+        labels:
+          severity: warning
+          component: business
+        annotations:
+          summary: "High human escalation rate"
+          description: |
+            {{ $value | printf "%.1f" }}% of queries are being escalated to humans.
+            This indicates the AI system may need retraining or improvement.
+  
+  # Group 5: Security Alerts
+  - name: security
+    interval: 1m
+    rules:
+      
+      # Alert 17: PHI Detection Spike
+      - alert: PHIDetectionSpike
+        expr: |
+          rate(phi_detection_total[5m]) > 10
+        for: 2m
+        labels:
+          severity: critical
+          component: security
+        annotations:
+          summary: "PHI detection spike"
+          description: |
+            {{ $value }} PHI instances detected in the last 5 minutes.
+            This may indicate a data breach or misconfigured data access.
+            Immediate investigation required.
+      
+      # Alert 18: Failed Authentication Attempts
+      - alert: FailedAuthentications
+        expr: |
+          rate(auth_failures_total[5m]) > 5
+        for: 5m
+        labels:
+          severity: warning
+          component: security
+        annotations:
+          summary: "Multiple failed authentication attempts"
+          description: |
+            {{ $value }} failed authentication attempts per second.
+            Possible brute force attack. Check IP addresses and consider rate limiting.
+      
+      # Alert 19: Unauthorized Access Attempts
+      - alert: UnauthorizedAccessAttempt
+        expr: |
+          rate(auth_unauthorized_total[5m]) > 0
+        for: 1m
+        labels:
+          severity: critical
+          component: security
+        annotations:
+          summary: "Unauthorized access attempt detected"
+          description: |
+            User {{ $labels.user_id }} attempted to access {{ $labels.resource }} without permission.
+            Check user permissions and investigate potential security breach.

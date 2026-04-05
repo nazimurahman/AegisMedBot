@@ -1,0 +1,27 @@
+# Service for Backend API access
+
+apiVersion: v1
+kind: Service
+
+metadata:
+  name: backend-service
+  namespace: medintel
+  labels:
+    app: aegismedbot
+    component: backend
+    tier: backend
+
+spec:
+  selector:
+    app: aegismedbot
+    component: backend
+    tier: backend
+  
+  ports:
+  - port: 8000
+    targetPort: 8000
+    protocol: TCP
+    name: http
+  
+  type: ClusterIP
+  # Internal service - exposed externally via Ingress

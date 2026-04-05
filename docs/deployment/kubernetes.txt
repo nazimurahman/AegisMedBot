@@ -1,0 +1,580 @@
+================================================================================
+AEGISMEDBOT KUBERNETES DEPLOYMENT GUIDE
+================================================================================
+
+This document provides comprehensive instructions for deploying the AegisMedBot
+platform on Kubernetes clusters for production scale operations.
+
+================================================================================
+KUBERNETES ARCHITECTURE OVERVIEW
+================================================================================
+
+Kubernetes provides orchestration for containerized applications including
+automatic scaling, self healing, and rolling updates. The AegisMedBot platform
+deploys to Kubernetes using a microservices architecture.
+
+Kubernetes Concepts Used
+
+Namespaces isolate resources within the cluster. The medintel namespace
+contains all AegisMedBot resources. Namespace isolation prevents conflicts
+with other applications and enables resource quotas.
+
+Deployments manage stateless application pods. Each deployment defines a
+template for pods including container images, environment variables, and
+resource requirements. Deployments handle rolling updates and rollbacks.
+
+Services provide stable network endpoints for pods. A service selects pods
+by labels and load balances traffic across them. Services enable loose
+coupling between components.
+
+ConfigMaps store non sensitive configuration data. The app config map stores
+environment variables like database hostnames and feature flags. ConfigMaps
+can be updated without rebuilding images.
+
+Secrets store sensitive data like passwords and API keys. Secrets are base64
+encoded and can be encrypted at rest. They are mounted as files or exposed
+as environment variables.
+
+PersistentVolumeClaims request storage for stateful components. PostgreSQL
+needs persistent storage for data. Redis and Qdrant also need persistent
+storage.
+
+Ingress resources define HTTP routing rules. The ingress routes external
+traffic to internal services based on hostname and path.
+
+HorizontalPodAutoscalers automatically adjust replica counts based on
+metrics. CPU utilization, memory usage, and custom metrics trigger scaling.
+
+================================================================================
+NAMESPACE CONFIGURATION
+================================================================ENTER
+The medintel namespace isolates all AegisMedBot resources.
+
+Namespace Manifest Analysis
+The namespace.yaml file creates a namespace named medintel. The metadata
+includes labels for environment and team ownership. The spec section is
+empty for a basic namespace.
+
+Resource quotas limit total resource usage within the namespace. The quota
+defines maximum CPU, memory, and storage. This prevents the application
+from consuming all cluster resources.
+
+The limit range sets default and maximum resource requests for containers
+that do not specify their own. This ensures every container has minimum
+guaranteed resources.
+
+Applying the namespace
+Run kubectl apply -f kubernetes/namespaces/medintel.yaml to create the
+namespace. Verify with kubectl get namespaces. The medintel namespace
+should appear with status Active.
+
+All subsequent commands should include --namespace medintel or set the
+namespace context with kubectl config set-context current-context
+--namespace medintel.
+
+================================================================================
+CONFIGMAPS AND SECRETS
+================================================================================
+
+Configuration is separated from application code using ConfigMaps and Secrets.
+
+Application ConfigMap
+The app config map stores non sensitive environment variables. The data
+section contains key value pairs. POSTGRES_SERVER is set to postgres which
+is the service name. REDIS_HOST is set to redis. QDRANT_HOST is set to qdrant.
+
+The config map is created with kubectl create configmap app-config
+--from-literal POSTGRES_SERVER postgres. Or from a file using
+kubectl create configmap app-config --from-file app-config.yaml.
+
+Pods reference config map values using valueFrom configMapKeyRef in their
+environment variables. This injects the values at runtime.
+
+Database Secrets
+The db secrets store database passwords and usernames. These are sensitive
+and must not be stored in version control. The secret is created manually
+on the cluster.
+
+Creating secrets with kubectl create secret generic db-secrets
+--from-literal POSTGRES_PASSWORD your_secure_password. The password is
+base64 encoded but not encrypted by default.
+
+For production, enable encryption at rest for secrets. Configure the
+Kubernetes API server with --encryption-provider-config pointing to a
+file with encryption keys.
+
+Application Secrets
+The app secrets store the JWT signing key and other application secrets.
+Create with kubectl create secret generic app-secrets
+--from-literal SECRET_KEY your_secure_key.
+
+Rotate secrets regularly. Update the secret with kubectl create secret
+generic app-secrets --from-literal SECRET_KEY new_key --dry-run -o yaml
+kubectl apply. This updates the secret without downtime.
+
+================================================================================
+DEPLOYMENT MANIFESTS
+================================================================================
+
+Deployment manifests define how pods run and update.
+
+Backend Deployment Analysis
+The backend deployment creates replicas of the backend container. The
+replicas field specifies desired pod count. The selector matches pods
+with label app medintel and component backend.
+
+The pod template defines the actual pod specification. Labels on the pod
+must match the selector. The container name is backend. The image is
+medintel/backend:latest.
+
+Ports expose container port 8000. The containerPort field is informational.
+Actual networking uses services.
+
+Environment variables are defined in the env array. Some values come from
+configMapKeyRef. Others come from secretKeyRef. This keeps secrets out of
+the manifest.
+
+Resource requests specify minimum resources. The scheduler uses these to
+place pods. CPU 250 millicores means 0.25 CPU core. Memory 512 megabytes
+is the minimum guaranteed.
+
+Resource limits specify maximum resources. The pod cannot exceed these
+limits. CPU 500 millicores and memory 1 gigabyte are the limits.
+
+Liveness probe checks if the container is alive. The probe hits the
+health endpoint every 10 seconds. If the probe fails 3 times, Kubernetes
+restarts the container.
+
+Readiness probe checks if the container can accept traffic. The probe
+hits the health endpoint every 5 seconds. If the probe fails, Kubernetes
+removes the pod from service load balancing.
+
+Frontend Deployment Analysis
+The frontend deployment is similar but with different resource requirements.
+The frontend needs less memory and CPU than the backend.
+
+The frontend container exposes port 7860. The liveness and readiness probes
+check the root path which returns the Gradio interface.
+
+Agent Deployments
+Each agent could have its own deployment. The agents are currently inside
+the backend container for simplicity. For production scale, separate each
+agent into its own deployment.
+
+Separate agent deployments allow independent scaling. The clinical agent
+might need more replicas than the compliance agent. Each deployment would
+have its own resource requests and limits.
+
+================================================================================
+SERVICE MANIFESTS
+================================================================================
+
+Services provide stable endpoints for pods that may be rescheduled.
+
+Backend Service Analysis
+The backend service selects pods with label app medintel and component
+backend. The selector must match pod labels exactly.
+
+The service exposes port 8000. The targetPort is the container port.
+The port is the service port. Internal clients connect to port 8000.
+
+Type ClusterIP makes the service only accessible inside the cluster.
+This is appropriate for backend services that should not be directly
+exposed to the internet.
+
+Frontend Service Analysis
+The frontend service selects frontend pods. The targetPort is 7860 which
+matches the container port.
+
+This service also uses ClusterIP type. The ingress will route external
+traffic to this service.
+
+Database Services
+The postgres service selects postgres pods. It uses ClusterIP type.
+The port is 5432.
+
+StatefulSets manage stateful components like databases. A StatefulSet
+provides stable network identities and ordered deployment. The postgres
+stateful set is in a separate file.
+
+================================================================================
+INGRESS CONFIGURATION
+================================================================================
+
+Ingress routes external traffic to internal services.
+
+Ingress Manifest Analysis
+The ingress resource defines routing rules. The host field specifies the
+domain name. The secretName references a TLS secret for HTTPS.
+
+The rules section defines path based routing. The root path forwards to
+the frontend service. The /api path forwards to the backend service.
+
+The ingress controller must be installed in the cluster. Common options
+include NGINX Ingress Controller, Traefik, and AWS Load Balancer Controller.
+
+Installing NGINX Ingress Controller
+Install using Helm with helm repo add ingress-nginx
+https://kubernetes.github.io/ingress-nginx and helm install ingress-nginx
+ingress-nginx/ingress-nginx.
+
+After installation, get the external IP with kubectl get svc
+ingress-nginx-controller. Configure DNS to point your domain to this IP.
+
+TLS Certificates
+The ingress references a TLS secret named medintel-tls. Create this secret
+with cert manager or manually.
+
+For manual creation, generate a certificate and key then run
+kubectl create secret tls medintel-tls --cert tls.crt --key tls.key.
+
+For automatic certificate management, install cert manager and create
+a ClusterIssuer. The ingress annotation cert-manager.io/cluster-issuer
+tells cert manager to request a certificate.
+
+================================================================================
+STORAGE CONFIGURATION
+================================================================================
+
+Stateful components need persistent storage.
+
+PersistentVolumeClaim Analysis
+The postgres PVC requests 10 gigabytes of storage. The accessModes
+ReadWriteOnce means only one pod can write at a time. This is appropriate
+for PostgreSQL.
+
+The storageClassName specifies which storage class to use. Standard is
+typically slow but reliable. For production, use a fast SSD storage class.
+
+The PVC is referenced in the StatefulSet volumeClaimTemplates. Each
+replica gets its own PVC.
+
+Storage Classes
+Different workloads need different storage characteristics. PostgreSQL
+needs fast random I O. Qdrant needs fast sequential I O for vector search.
+
+Create a fast SSD storage class for databases. Create a standard storage
+class for logs and backups.
+
+Cloud providers offer managed storage classes. On AWS, gp3 is a good
+choice for databases. On GCP, pd-ssd is appropriate. On Azure, managed
+premium disk works well.
+
+================================================================================
+HORIZONTAL POD AUTOSCALING
+================================================================================
+
+HorizontalPodAutoscaler automatically adjusts replica counts.
+
+Backend HPA Analysis
+The backend HPA scales the backend deployment. The scaleTargetRef points
+to the deployment name.
+
+The minReplicas is 2. Even with no load, at least 2 replicas run. This
+provides redundancy. The maxReplicas is 10. The deployment will not scale
+beyond 10 replicas.
+
+The metrics section defines what triggers scaling. CPU utilization target
+70 percent means when average CPU across pods exceeds 70 percent, add more
+pods. Memory utilization target 80 percent triggers scaling as well.
+
+The behavior section controls how scaling happens. scaleUp has a stabilization
+window of 60 seconds. The policy allows scaling up by 100 percent per 60
+seconds. scaleDown has a stabilization window of 300 seconds to avoid
+flapping. It allows scaling down by 10 percent per 60 seconds.
+
+Custom Metrics
+For more sophisticated scaling, use custom metrics. The agent queue depth
+could trigger scaling. When the queue has many pending requests, add more
+replicas.
+
+Install Prometheus Adapter to expose custom metrics. Configure the HPA to
+use external metrics from Prometheus.
+
+================================================================================
+ROLLING UPDATES
+================================================================================
+
+Kubernetes performs rolling updates when deployment pod template changes.
+
+Update Strategy
+The deployment spec includes strategy type RollingUpdate. The
+maxSurge 25 percent means during update, up to 25 percent more pods
+than desired can run. The maxUnavailable 25 percent means up to 25 percent
+of pods can be unavailable during update.
+
+This strategy ensures the application remains available during updates.
+Old pods terminate gradually as new pods become ready.
+
+Performing an Update
+Update the container image with kubectl set image deployment medintel-backend
+backend=medintel/backend:newtag. Kubernetes starts new pods with the new
+image and terminates old pods.
+
+Monitor the rollout with kubectl rollout status deployment medintel-backend.
+This command waits until the rollout completes.
+
+If the rollout fails, roll back with kubectl rollout undo deployment
+medintel-backend. This reverts to the previous revision.
+
+Readiness Probes
+Readiness probes are critical for rolling updates. New pods must pass
+their readiness probe before receiving traffic. This ensures only healthy
+pods serve requests.
+
+The backend readiness probe hits the health endpoint. The endpoint checks
+database connections and model loading. Only when all dependencies are
+ready does the probe succeed.
+
+================================================================================
+MONITORING WITH PROMETHEUS AND GRAFANA
+================================================================================
+
+Monitoring is essential for production Kubernetes deployments.
+
+Prometheus Operator
+Install Prometheus Operator using Helm. The operator manages Prometheus
+instances, service monitors, and alert rules.
+
+Create a ServiceMonitor for the backend. The service monitor selects
+backend pods and tells Prometheus to scrape metrics from the metrics
+port.
+
+Prometheus scrapes metrics every 15 seconds. It stores time series data
+with labels for pod, namespace, and service.
+
+Grafana Dashboards
+Install Grafana using Helm. Configure Prometheus as a data source.
+
+Import Kubernetes dashboard IDs from Grafana Labs. The Kubernetes cluster
+dashboard shows node and pod metrics. Create custom dashboards for
+application specific metrics like agent confidence scores and request
+latency.
+
+Alert Rules
+Define Prometheus alert rules for critical conditions. Alert when backend
+pods have high error rates. Alert when PostgreSQL replication lags. Alert
+when Qdrant query latency exceeds threshold.
+
+Configure Alertmanager to send notifications to PagerDuty, Slack, or email.
+Set up escalation policies for different severity levels.
+
+================================================================================
+LOGGING WITH EFK STACK
+================================================================================
+
+Elasticsearch Fluentd Kibana provides log aggregation.
+
+Fluentd DaemonSet
+Fluentd runs as a DaemonSet on each node. It collects logs from container
+stdout and stderr. It parses logs and forwards to Elasticsearch.
+
+Configure Fluentd to add Kubernetes metadata. Each log entry includes
+pod name, namespace, container name, and labels.
+
+Elasticsearch Cluster
+Elasticsearch runs as a StatefulSet with persistent storage. For production,
+use at least 3 nodes for redundancy.
+
+Configure index lifecycle management. Hot nodes handle recent logs. Warm
+nodes handle older logs. Delete logs after 30 days.
+
+Kibana
+Kibana provides a web interface for searching logs. Create index patterns
+to explore log data. Use Kibana Query Language to search for specific
+error messages.
+
+Set up saved searches and dashboards for common troubleshooting scenarios.
+For example, create a dashboard showing all errors from the clinical agent.
+
+================================================================================
+BACKUP AND DISASTER RECOVERY
+================================================================================
+
+Backup strategies for Kubernetes workloads.
+
+Database Backups
+PostgreSQL backups using pg_dump inside a cron job. Create a CronJob that
+runs pg_dump and uploads to cloud storage.
+
+The backup job should run daily. Keep backups for 30 days. Test restores
+monthly to verify backup integrity.
+
+Etcd Backup
+Kubernetes stores cluster state in etcd. Backup etcd regularly. The backup
+includes all resources including deployments, services, and config maps.
+
+Use etcdctl snapshot save to create a snapshot. Store snapshots in cloud
+storage. Restore by stopping the API server and restoring the snapshot.
+
+Disaster Recovery Procedure
+Document the recovery procedure. Steps include restoring etcd from backup,
+restoring database backups, and verifying application functionality.
+
+Test the disaster recovery plan quarterly. Simulate a cluster failure and
+practice restoring from backups. Measure recovery time and improve the
+process.
+
+================================================================================
+SECURITY HARDENING
+================================================================================
+
+Security best practices for Kubernetes deployments.
+
+Pod Security Standards
+Apply Pod Security Standards to the medintel namespace. Use the restricted
+profile which enforces best practices like dropping all capabilities and
+running as non root.
+
+Create a PodSecurityPolicy or use the built in Pod Security Admission.
+Set enforce restricted to block pods that violate security standards.
+
+Network Policies
+Define Network Policies to restrict traffic. Default deny all ingress and
+egress. Then allow specific traffic like backend to postgres and frontend
+to backend.
+
+Network policies prevent lateral movement if a pod is compromised. An
+attacker in the frontend cannot access the database directly.
+
+RBAC Configuration
+Create Role and RoleBinding for the application. The backend service account
+needs permission to read its own config map and secrets. It does not need
+permission to list pods or create deployments.
+
+Use least privilege principle. Give each service account only the permissions
+it absolutely needs. Audit RBAC permissions regularly.
+
+Image Security
+Use image signing to verify container images. Configure the cluster to
+only run images signed by a trusted authority.
+
+Scan images for vulnerabilities before deploying. Use tools like Trivy
+or Clair. Block deployment of images with critical vulnerabilities.
+
+================================================================================
+CLOUD SPECIFIC CONFIGURATIONS
+================================================================================
+
+Kubernetes deployments differ by cloud provider.
+
+Amazon EKS Configuration
+EKS provides managed Kubernetes. Use AWS Load Balancer Controller for
+ingress. The controller creates Application Load Balancers for ingress
+resources.
+
+Use EBS CSI driver for persistent storage. The driver provisions EBS
+volumes for PersistentVolumeClaims. Use gp3 volumes for good performance.
+
+Use IAM roles for service accounts. The backend pod can assume an IAM role
+to access S3 for backups without storing AWS credentials.
+
+Google GKE Configuration
+GKE provides managed Kubernetes. Use GKE Ingress controller which creates
+Google Cloud Load Balancers.
+
+Use Compute Engine persistent disks for storage. SSD persistent disks
+provide good performance for databases.
+
+Workload Identity maps Kubernetes service accounts to Google service
+accounts. This avoids storing Google credentials in secrets.
+
+Azure AKS Configuration
+AKS provides managed Kubernetes. Use Application Gateway Ingress Controller
+for ingress routing.
+
+Use Azure Managed Disks for persistent storage. Premium SSDs are recommended
+for production databases.
+
+Azure AD integration authenticates users to the cluster. Use Azure AD Pod
+Identity for pods to access Azure services.
+
+================================================================================
+TROUBLESHOOTING KUBERNETES DEPLOYMENTS
+================================================================================
+
+Common issues and their solutions.
+
+Pod Stuck in Pending
+Check events with kubectl describe pod pod_name. Common causes include
+insufficient resources, persistent volume claim issues, or node selector
+constraints.
+
+If insufficient CPU, either increase cluster size or reduce resource
+requests. If PVC is pending, check storage class availability.
+
+Pod Crashing Loop
+Check logs with kubectl logs pod_name --previous. Look for error messages
+just before crash. Common causes include missing environment variables,
+database connection failures, or out of memory errors.
+
+Check resource limits. If memory limit is too low, increase it. If liveness
+probe is misconfigured, fix the probe endpoint.
+
+Service Not Accessible
+Check service endpoints with kubectl get endpoints service_name. If endpoints
+are empty, the service selector does not match any pods. Check pod labels.
+
+Check network policies. A network policy may be blocking traffic. Temporarily
+remove policies to test, then add back with correct rules.
+
+Ingress Not Routing
+Check ingress controller logs. Common issues include missing TLS secret,
+incorrect service name, or path syntax errors.
+
+Test directly using kubectl port-forward. Forward service port to localhost
+and test with curl. If direct access works, the issue is in ingress
+configuration.
+
+Database Connection Issues
+Check that database pods are running. Check database service endpoints.
+Test connection from backend pod using kubectl exec backend-pod -- psql
+connection string.
+
+Database credentials may be incorrect. Check secrets and environment
+variable injection. The secret may not be mounted correctly.
+
+================================================================================
+PRODUCTION READINESS CHECKLIST
+================================================================================
+
+Before deploying to production Kubernetes, verify these items.
+
+Cluster Configuration
+Cluster has at least 3 nodes for high availability
+Nodes have sufficient resources for peak load
+Cluster auto scaling configured
+Backup and disaster recovery tested
+Monitoring and alerting configured
+Network policies enforced
+Pod security standards applied
+RBAC permissions audited
+
+Application Configuration
+Resource requests and limits set appropriately
+Readiness and liveness probes configured
+Rolling update strategy defined
+Horizontal pod autoscaling configured
+ConfigMaps and secrets created
+Persistent volume claims created
+Service monitors configured for Prometheus
+
+Security Configuration
+Images scanned for vulnerabilities
+Image signing enforced
+Non root user in containers
+Capabilities dropped where possible
+Secrets encrypted at rest
+Network policies restrict traffic
+TLS configured for ingress
+Audit logging enabled
+
+Operations Readiness
+Runbooks documented
+On call rotation established
+Deployment playbook tested
+Rollback procedure tested
+Disaster recovery drill completed
+Backup restoration tested
+Performance baseline established
+Load testing completed

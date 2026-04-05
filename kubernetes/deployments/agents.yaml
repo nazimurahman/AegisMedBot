@@ -1,0 +1,307 @@
+# Agent service deployment for AI agents
+# Handles clinical, risk, operations, and director agents
+
+apiVersion: apps/v1
+kind: Deployment
+
+metadata:
+  name: agents
+  namespace: medintel
+  labels:
+    app: aegismedbot
+    component: agents
+    tier: ai-layer
+
+spec:
+  replicas: 3
+  # Scale based on load - can handle multiple concurrent conversations
+  
+  selector:
+    matchLabels:
+      app: aegismedbot
+      component: agents
+      tier: ai-layer
+  
+  strategy:
+    # Deployment strategy for updates
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      # Allow one extra pod during update
+      maxUnavailable: 0
+      # Ensure zero downtime during updates
+  
+  template:
+    metadata:
+      labels:
+        app: aegismedbot
+        component: agents
+        tier: ai-layer
+      
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8001"
+        prometheus.io/path: "/metrics"
+        
+        # Enable automatic restart on config change
+        checksum/config: "${CONFIG_HASH}"
+        checksum/secrets: "${SECRETS_HASH}"
+    
+    spec:
+      containers:
+      - name: agent-service
+        image: aegismedbot/agents:latest
+        # Custom agent service image
+        
+        imagePullPolicy: Always
+        
+        ports:
+        - containerPort: 8001
+          name: http
+          protocol: TCP
+        
+        env:
+        # Core configuration
+        - name: ENVIRONMENT
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: ENVIRONMENT
+        
+        - name: DEBUG
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: DEBUG
+        
+        # Agent configuration from ConfigMap
+        - name: CLINICAL_AGENT_PROMPT
+          valueFrom:
+            configMapKeyRef:
+              name: agent-config
+              key: clinical_agent_prompt
+        
+        - name: RISK_AGENT_PROMPT
+          valueFrom:
+            configMapKeyRef:
+              name: agent-config
+              key: risk_agent_prompt
+        
+        - name: OPERATIONS_AGENT_PROMPT
+          valueFrom:
+            configMapKeyRef:
+              name: agent-config
+              key: operations_agent_prompt
+        
+        - name: DIRECTOR_AGENT_PROMPT
+          valueFrom:
+            configMapKeyRef:
+              name: agent-config
+              key: director_agent_prompt
+        
+        - name: RESEARCH_AGENT_PROMPT
+          valueFrom:
+            configMapKeyRef:
+              name: agent-config
+              key: research_agent_prompt
+        
+        - name: COMPLIANCE_AGENT_PROMPT
+          valueFrom:
+            configMapKeyRef:
+              name: agent-config
+              key: compliance_agent_prompt
+        
+        # Model parameters
+        - name: MODEL_TEMPERATURE
+          valueFrom:
+            configMapKeyRef:
+              name: agent-config
+              key: model_temperature
+        
+        - name: MODEL_TOP_P
+          valueFrom:
+            configMapKeyRef:
+              name: agent-config
+              key: model_top_p
+        
+        - name: MAX_NEW_TOKENS
+          valueFrom:
+            configMapKeyRef:
+              name: agent-config
+              key: max_new_tokens
+        
+        # Database connections
+        - name: POSTGRES_SERVER
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: POSTGRES_SERVER
+        
+        - name: POSTGRES_USER
+          valueFrom:
+            secretKeyRef:
+              name: db-secrets
+              key: postgres_user
+        
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: db-secrets
+              key: postgres_password
+        
+        - name: POSTGRES_DB
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: POSTGRES_DB
+        
+        - name: REDIS_HOST
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: REDIS_HOST
+        
+        - name: REDIS_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: db-secrets
+              key: redis_password
+        
+        - name: QDRANT_HOST
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: QDRANT_HOST
+        
+        # Agent orchestration
+        - name: MAX_AGENT_ITERATIONS
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: MAX_AGENT_ITERATIONS
+        
+        - name: AGENT_TIMEOUT_SECONDS
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: AGENT_TIMEOUT_SECONDS
+        
+        - name: HUMAN_IN_LOOP_THRESHOLD
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: HUMAN_IN_LOOP_THRESHOLD
+        
+        - name: CONFIDENCE_THRESHOLD
+          valueFrom:
+            configMapKeyRef:
+              name: agent-config
+              key: confidence_threshold
+        
+        - name: ENABLE_HUMAN_ESCALATION
+          valueFrom:
+            configMapKeyRef:
+              name: agent-config
+              key: enable_human_escalation
+        
+        # Performance tuning
+        - name: INFERENCE_BATCH_SIZE
+          valueFrom:
+            configMapKeyRef:
+              name: agent-config
+              key: inference_batch_size
+        
+        - name: CACHE_TTL_SECONDS
+          valueFrom:
+            configMapKeyRef:
+              name: agent-config
+              key: cache_ttl_seconds
+        
+        - name: ENABLE_RESPONSE_CACHING
+          valueFrom:
+            configMapKeyRef:
+              name: agent-config
+              key: enable_response_caching
+        
+        # Model serving
+        - name: TRANSFORMER_MODEL
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: TRANSFORMER_MODEL
+        
+        - name: MAX_SEQUENCE_LENGTH
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: MAX_SEQUENCE_LENGTH
+        
+        - name: BATCH_SIZE
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: BATCH_SIZE
+        
+        resources:
+          requests:
+            memory: "2Gi"
+            # Agent service needs significant memory for model inference
+            cpu: "1"
+          limits:
+            memory: "4Gi"
+            cpu: "2"
+        
+        volumeMounts:
+        - name: model-cache
+          mountPath: /app/models
+          # Cache for transformer models
+        
+        - name: agent-logs
+          mountPath: /app/logs
+          # Store agent logs for analysis
+        
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8001
+          initialDelaySeconds: 60
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8001
+          initialDelaySeconds: 30
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+      
+      volumes:
+      - name: model-cache
+        persistentVolumeClaim:
+          claimName: model-cache-pvc
+      
+      - name: agent-logs
+        emptyDir: {}
+        # Ephemeral storage for logs
+      
+      # Pod anti-affinity to distribute agents across nodes
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchLabels:
+                  app: aegismedbot
+                  component: agents
+              topologyKey: kubernetes.io/hostname
+      
+      # Tolerations for GPU nodes
+      tolerations:
+      - key: "gpu"
+        operator: "Equal"
+        value: "true"
+        effect: "NoSchedule"

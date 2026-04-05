@@ -1,0 +1,228 @@
+"""
+Grafana Dashboard Configuration - Model Performance Monitoring
+This JSON defines a comprehensive dashboard for monitoring ML model performance metrics.
+Each panel represents a different aspect of model behavior and performance.
+"""
+
+{
+  "dashboard": {
+    "title": "MedIntel - Model Performance Dashboard",
+    "description": "Real-time monitoring of ML model performance metrics including latency, accuracy, and resource usage",
+    "tags": ["machine-learning", "models", "performance"],
+    "timezone": "browser",
+    "refresh": "30s",
+    "panels": [
+      {
+        "title": "Model Response Time (95th Percentile)",
+        "type": "graph",
+        "gridPos": {"x": 0, "y": 0, "w": 8, "h": 8},
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.95, rate(model_inference_duration_seconds_bucket[5m]))",
+            "legendFormat": "{{model_name}}",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "s",
+            "thresholds": {
+              "steps": [
+                {"value": null, "color": "green"},
+                {"value": 2, "color": "yellow"},
+                {"value": 5, "color": "red"}
+              ]
+            }
+          }
+        },
+        "description": "Shows the 95th percentile inference time for each model. Times above 2 seconds trigger warnings, above 5 seconds are critical."
+      },
+      {
+        "title": "Model Accuracy Over Time",
+        "type": "graph",
+        "gridPos": {"x": 8, "y": 0, "w": 8, "h": 8},
+        "targets": [
+          {
+            "expr": "model_accuracy_score",
+            "legendFormat": "{{model_version}}",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percent",
+            "min": 0,
+            "max": 100,
+            "thresholds": {
+              "steps": [
+                {"value": null, "color": "red"},
+                {"value": 70, "color": "yellow"},
+                {"value": 90, "color": "green"}
+              ]
+            }
+          }
+        },
+        "description": "Tracks model accuracy over time. Values below 70% require retraining, below 90% trigger warnings."
+      },
+      {
+        "title": "Inference Requests per Second",
+        "type": "stat",
+        "gridPos": {"x": 16, "y": 0, "w": 4, "h": 4},
+        "targets": [
+          {
+            "expr": "rate(model_inference_requests_total[5m])",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "reqps",
+            "decimals": 0
+          }
+        },
+        "description": "Current inference request rate across all models"
+      },
+      {
+        "title": "Model Memory Usage",
+        "type": "gauge",
+        "gridPos": {"x": 20, "y": 0, "w": 4, "h": 4},
+        "targets": [
+          {
+            "expr": "model_memory_usage_bytes / 1024 / 1024",
+            "legendFormat": "{{model_name}}",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "MB",
+            "min": 0,
+            "max": 4096,
+            "thresholds": {
+              "steps": [
+                {"value": null, "color": "green"},
+                {"value": 1024, "color": "yellow"},
+                {"value": 3072, "color": "red"}
+              ]
+            }
+          }
+        },
+        "description": "Current memory consumption by each loaded model"
+      },
+      {
+        "title": "Model Error Rate",
+        "type": "graph",
+        "gridPos": {"x": 0, "y": 8, "w": 8, "h": 8},
+        "targets": [
+          {
+            "expr": "rate(model_errors_total[5m]) / rate(model_inference_requests_total[5m]) * 100",
+            "legendFormat": "{{model_name}} Error Rate",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percent",
+            "min": 0,
+            "max": 100,
+            "thresholds": {
+              "steps": [
+                {"value": null, "color": "green"},
+                {"value": 1, "color": "yellow"},
+                {"value": 5, "color": "red"}
+              ]
+            }
+          }
+        },
+        "description": "Percentage of inference requests that result in errors"
+      },
+      {
+        "title": "GPU Utilization",
+        "type": "graph",
+        "gridPos": {"x": 8, "y": 8, "w": 8, "h": 8},
+        "targets": [
+          {
+            "expr": "gpu_utilization_percent",
+            "legendFormat": "GPU {{gpu_id}}",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percent",
+            "min": 0,
+            "max": 100
+          }
+        },
+        "description": "GPU utilization percentage for inference workloads"
+      },
+      {
+        "title": "Model Confidence Distribution",
+        "type": "heatmap",
+        "gridPos": {"x": 16, "y": 4, "w": 8, "h": 12},
+        "targets": [
+          {
+            "expr": "model_confidence_score",
+            "legendFormat": "confidence",
+            "refId": "A"
+          }
+        ],
+        "description": "Distribution of model confidence scores across predictions. Low confidence clusters may indicate domain shift."
+      },
+      {
+        "title": "Top Model Errors",
+        "type": "table",
+        "gridPos": {"x": 0, "y": 16, "w": 12, "h": 8},
+        "targets": [
+          {
+            "expr": "topk(10, model_error_count_total)",
+            "legendFormat": "{{error_type}}",
+            "refId": "A"
+          }
+        ],
+        "description": "Most frequent error types encountered during model inference"
+      },
+      {
+        "title": "Model Version Performance",
+        "type": "bargauge",
+        "gridPos": {"x": 12, "y": 16, "w": 12, "h": 8},
+        "targets": [
+          {
+            "expr": "model_version_accuracy",
+            "legendFormat": "Version {{model_version}}",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percent",
+            "min": 0,
+            "max": 100
+          }
+        },
+        "description": "Performance comparison across different model versions"
+      }
+    ],
+    "variables": [
+      {
+        "name": "model_name",
+        "type": "query",
+        "query": "label_values(model_accuracy_score, model_name)",
+        "multi": true,
+        "includeAll": true
+      },
+      {
+        "name": "environment",
+        "type": "custom",
+        "query": "production,staging,development",
+        "current": {"value": "production"}
+      }
+    ],
+    "time": {
+      "from": "now-6h",
+      "to": "now"
+    }
+  },
+  "overwrite": true,
+  "folderUid": "model-performance-folder"
+}

@@ -1,0 +1,259 @@
+"""
+Grafana Dashboard Configuration - System Infrastructure Monitoring
+This dashboard provides comprehensive visibility into the underlying infrastructure health
+including CPU, memory, disk, network, and service availability.
+"""
+
+{
+  "dashboard": {
+    "title": "MedIntel - System Infrastructure Dashboard",
+    "description": "Comprehensive monitoring of system resources, container health, and infrastructure performance",
+    "tags": ["infrastructure", "system", "kubernetes"],
+    "timezone": "browser",
+    "refresh": "30s",
+    "panels": [
+      {
+        "title": "System Overview - Cluster Health",
+        "type": "stat",
+        "gridPos": {"x": 0, "y": 0, "w": 4, "h": 4},
+        "targets": [
+          {
+            "expr": "count(kube_pod_status_ready{condition='true'})",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "short",
+            "decimals": 0,
+            "mappings": [
+              {"type": "value", "value": "0", "text": "Critical - No Pods"}
+            ]
+          }
+        },
+        "description": "Number of healthy pods currently running in the cluster"
+      },
+      {
+        "title": "Average CPU Usage",
+        "type": "stat",
+        "gridPos": {"x": 4, "y": 0, "w": 4, "h": 4},
+        "targets": [
+          {
+            "expr": "avg(rate(container_cpu_usage_seconds_total[5m])) * 100",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percent",
+            "decimals": 1,
+            "thresholds": {
+              "steps": [
+                {"value": null, "color": "green"},
+                {"value": 70, "color": "yellow"},
+                {"value": 85, "color": "red"}
+              ]
+            }
+          }
+        },
+        "description": "Average CPU utilization across all containers"
+      },
+      {
+        "title": "Average Memory Usage",
+        "type": "stat",
+        "gridPos": {"x": 8, "y": 0, "w": 4, "h": 4},
+        "targets": [
+          {
+            "expr": "avg(container_memory_working_set_bytes / container_spec_memory_limit_bytes) * 100",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percent",
+            "decimals": 1,
+            "thresholds": {
+              "steps": [
+                {"value": null, "color": "green"},
+                {"value": 75, "color": "yellow"},
+                {"value": 90, "color": "red"}
+              ]
+            }
+          }
+        },
+        "description": "Average memory utilization across all containers"
+      },
+      {
+        "title": "API Response Time (95th)",
+        "type": "stat",
+        "gridPos": {"x": 12, "y": 0, "w": 4, "h": 4},
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m]))",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "s",
+            "decimals": 2,
+            "thresholds": {
+              "steps": [
+                {"value": null, "color": "green"},
+                {"value": 1, "color": "yellow"},
+                {"value": 3, "color": "red"}
+              ]
+            }
+          }
+        },
+        "description": "95th percentile API response time across all endpoints"
+      },
+      {
+        "title": "CPU Usage by Pod",
+        "type": "graph",
+        "gridPos": {"x": 0, "y": 4, "w": 12, "h": 8},
+        "targets": [
+          {
+            "expr": "rate(container_cpu_usage_seconds_total[5m]) * 100",
+            "legendFormat": "{{pod}}",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percent"
+          }
+        },
+        "description": "CPU usage breakdown by individual pod"
+      },
+      {
+        "title": "Memory Usage by Pod",
+        "type": "graph",
+        "gridPos": {"x": 12, "y": 4, "w": 12, "h": 8},
+        "targets": [
+          {
+            "expr": "container_memory_working_set_bytes / 1024 / 1024",
+            "legendFormat": "{{pod}}",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "MB"
+          }
+        },
+        "description": "Memory usage breakdown by individual pod"
+      },
+      {
+        "title": "Network Traffic In/Out",
+        "type": "graph",
+        "gridPos": {"x": 0, "y": 12, "w": 12, "h": 8},
+        "targets": [
+          {
+            "expr": "rate(container_network_receive_bytes_total[5m])",
+            "legendFormat": "Inbound - {{pod}}",
+            "refId": "A"
+          },
+          {
+            "expr": "rate(container_network_transmit_bytes_total[5m])",
+            "legendFormat": "Outbound - {{pod}}",
+            "refId": "B"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "Bps"
+          }
+        },
+        "description": "Network traffic inbound and outbound rates"
+      },
+      {
+        "title": "Disk I/O Operations",
+        "type": "graph",
+        "gridPos": {"x": 12, "y": 12, "w": 12, "h": 8},
+        "targets": [
+          {
+            "expr": "rate(container_fs_reads_total[5m])",
+            "legendFormat": "Reads - {{pod}}",
+            "refId": "A"
+          },
+          {
+            "expr": "rate(container_fs_writes_total[5m])",
+            "legendFormat": "Writes - {{pod}}",
+            "refId": "B"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "ops"
+          }
+        },
+        "description": "Disk read and write operations per second"
+      },
+      {
+        "title": "Service Availability",
+        "type": "table",
+        "gridPos": {"x": 0, "y": 20, "w": 12, "h": 8},
+        "targets": [
+          {
+            "expr": "up",
+            "legendFormat": "{{job}}",
+            "refId": "A"
+          }
+        ],
+        "description": "Availability status of all monitored services"
+      },
+      {
+        "title": "Database Connection Pool",
+        "type": "graph",
+        "gridPos": {"x": 12, "y": 20, "w": 12, "h": 8},
+        "targets": [
+          {
+            "expr": "pg_stat_database_numbackends",
+            "legendFormat": "Active Connections",
+            "refId": "A"
+          },
+          {
+            "expr": "pg_stat_database_xact_commit + pg_stat_database_xact_rollback",
+            "legendFormat": "Transactions",
+            "refId": "B"
+          }
+        ],
+        "description": "Database connection pool usage and transaction rates"
+      },
+      {
+        "title": "Pod Restart Count",
+        "type": "graph",
+        "gridPos": {"x": 0, "y": 28, "w": 24, "h": 6},
+        "targets": [
+          {
+            "expr": "kube_pod_container_status_restarts_total",
+            "legendFormat": "{{pod}}",
+            "refId": "A"
+          }
+        ],
+        "description": "Number of pod restarts - frequent restarts may indicate instability"
+      }
+    ],
+    "variables": [
+      {
+        "name": "namespace",
+        "type": "query",
+        "query": "label_values(kube_namespace_created, namespace)",
+        "includeAll": true
+      },
+      {
+        "name": "pod",
+        "type": "query",
+        "query": "label_values(kube_pod_info, pod)",
+        "multi": true,
+        "includeAll": true
+      }
+    ],
+    "time": {
+      "from": "now-24h",
+      "to": "now"
+    }
+  },
+  "overwrite": true
+}

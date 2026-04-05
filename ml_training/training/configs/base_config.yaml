@@ -1,0 +1,441 @@
+# ============================================================================
+# BASE CONFIGURATION FILE FOR MEDICAL TRANSFORMER TRAINING
+# ============================================================================
+# This configuration file defines all hyperparameters and settings for training
+# medical language models on clinical text data. It serves as the foundation
+# for all training runs and can be overridden by environment-specific configs.
+# ============================================================================
+
+# ----------------------------------------------------------------------------
+# MODEL ARCHITECTURE CONFIGURATION
+# ----------------------------------------------------------------------------
+# Defines the base transformer model to be fine-tuned for medical domain tasks
+model:
+  # Name of the pre-trained model from HuggingFace hub
+  # BiomedNLP-PubMedBERT is specifically trained on biomedical literature
+  # and PubMed abstracts, making it ideal for medical text understanding
+  name: "microsoft/BiomedNLP-PubMedBERT-base-uncased-abstract-fulltext"
+  
+  # Number of output classes for classification tasks
+  # This can be adjusted based on the specific task (binary, multi-class, etc.)
+  num_labels: 2
+  
+  # Maximum sequence length for tokenization
+  # Clinical notes often contain long text, but we truncate to balance
+  # memory usage and context preservation
+  max_length: 512
+  
+  # Whether to use gradient checkpointing to save memory
+  # This trades compute for memory by recomputing activations during backward pass
+  use_gradient_checkpointing: true
+  
+  # Path to save trained model checkpoints
+  output_dir: "./models/clinical_transformer"
+  
+  # Whether to use mixed precision training
+  # FP16 reduces memory usage and speeds up training on compatible GPUs
+  use_fp16: true
+
+# ----------------------------------------------------------------------------
+# TRAINING HYPERPARAMETERS
+# ----------------------------------------------------------------------------
+# These parameters control the training process and optimization strategy
+training:
+  # Number of complete passes through the entire training dataset
+  # Medical domain often benefits from more epochs due to specialized terminology
+  epochs: 5
+  
+  # Number of samples processed before updating model weights
+  # Smaller batch sizes reduce memory but may lead to noisy gradients
+  batch_size: 16
+  
+  # Number of gradient accumulation steps before optimizer update
+  # Simulates larger batch sizes when memory is constrained
+  gradient_accumulation_steps: 2
+  
+  # Maximum number of gradient norm for clipping
+  # Prevents exploding gradients which can destabilize training
+  max_grad_norm: 1.0
+  
+  # Learning rate for AdamW optimizer
+  # Smaller learning rates work better for fine-tuning pre-trained models
+  learning_rate: 2.0e-5
+  
+  # Weight decay for regularization
+  # Helps prevent overfitting by penalizing large weights
+  weight_decay: 0.01
+  
+  # Number of warmup steps for learning rate scheduler
+  # Gradually increases learning rate to stabilize early training
+  warmup_steps: 500
+  
+  # Learning rate scheduler type
+  # Linear scheduler with warmup is standard for transformer fine-tuning
+  scheduler: "linear"
+  
+  # Whether to use early stopping
+  # Stops training when validation metrics stop improving
+  early_stopping: true
+  
+  # Number of epochs to wait for improvement before stopping
+  patience: 3
+  
+  # Minimum improvement threshold for considering validation loss better
+  min_delta: 0.001
+
+# ----------------------------------------------------------------------------
+# DATASET CONFIGURATION
+# ----------------------------------------------------------------------------
+# Specifies where and how to load the training data
+dataset:
+  # Path to training data file
+  # Should be CSV or JSON format with text and labels
+  train_path: "./data/processed/clinical_train.csv"
+  
+  # Path to validation data file
+  val_path: "./data/processed/clinical_val.csv"
+  
+  # Path to test data file
+  test_path: "./data/processed/clinical_test.csv"
+  
+  # Name of the column containing text data
+  text_column: "clinical_text"
+  
+  # Name of the column containing labels
+  label_column: "label"
+  
+  # Whether to stratify train/validation split by label
+  # Ensures class distribution is preserved across splits
+  stratify: true
+  
+  # Seed for reproducible random splits
+  seed: 42
+  
+  # Whether to shuffle training data
+  shuffle: true
+  
+  # Number of worker processes for data loading
+  # Increases data loading speed on multi-core systems
+  num_workers: 4
+
+# ----------------------------------------------------------------------------
+# LORA CONFIGURATION (LOW-RANK ADAPTATION)
+# ----------------------------------------------------------------------------
+# LoRA enables efficient fine-tuning by training only a small number of parameters
+# This section defines how LoRA should be applied to the base model
+lora:
+  # Whether to use LoRA for training
+  # Significantly reduces trainable parameters while maintaining performance
+  use_lora: true
+  
+  # Rank of the low-rank matrices
+  # Higher rank = more trainable parameters = potentially better performance
+  # Typical values range from 4 to 64
+  rank: 16
+  
+  # Alpha scaling factor for LoRA
+  # Controls the contribution of LoRA weights to the original model
+  alpha: 32
+  
+  # Dropout rate for LoRA layers
+  # Helps prevent overfitting during fine-tuning
+  dropout: 0.1
+  
+  # Target modules to apply LoRA to
+  # Usually attention layers (query, value) as they contain most parameters
+  target_modules:
+    - "query"
+    - "value"
+    - "key"
+    - "output.dense"
+    - "intermediate.dense"
+  
+  # Whether to apply LoRA to all linear layers
+  # More comprehensive adaptation but may increase parameters
+  all_linear: false
+  
+  # Task type for LoRA configuration
+  # Different tasks may benefit from different LoRA settings
+  task_type: "SEQ_CLS"
+
+# ----------------------------------------------------------------------------
+# DATA AUGMENTATION CONFIGURATION
+# ----------------------------------------------------------------------------
+# Enhances training data to improve model robustness and generalization
+data_augmentation:
+  # Whether to use data augmentation
+  use_augmentation: true
+  
+  # Whether to apply synonym replacement using medical thesaurus
+  # Replaces medical terms with synonyms to increase vocabulary exposure
+  synonym_replacement: true
+  
+  # Whether to apply back-translation
+  # Translates text to another language and back to create paraphrases
+  back_translation: false
+  
+  # Whether to apply random insertion of non-critical words
+  # Adds noise to make model more robust
+  random_insertion: false
+  
+  # Number of augmented samples to generate per original sample
+  augmentation_factor: 2
+  
+  # Path to medical synonym dictionary
+  synonym_dict_path: "./data/medical_synonyms.json"
+  
+  # Language for back-translation (if enabled)
+  back_translation_language: "fr"
+
+# ----------------------------------------------------------------------------
+# EVALUATION CONFIGURATION
+# ----------------------------------------------------------------------------
+# Defines metrics and evaluation strategies for model assessment
+evaluation:
+  # List of metrics to compute during evaluation
+  # Each metric provides different insights into model performance
+  metrics:
+    - "accuracy"
+    - "precision"
+    - "recall"
+    - "f1"
+    - "auc_roc"
+    - "confusion_matrix"
+  
+  # Whether to compute per-class metrics
+  # Useful for imbalanced datasets common in medical applications
+  per_class_metrics: true
+  
+  # Whether to use macro averaging for multi-class metrics
+  macro_average: true
+  
+  # Whether to use weighted averaging for multi-class metrics
+  weighted_average: true
+  
+  # Path to save evaluation results
+  results_path: "./evaluation/results.json"
+  
+  # Whether to generate confusion matrix plot
+  plot_confusion_matrix: true
+  
+  # Whether to generate ROC curve plot
+  plot_roc_curve: true
+
+# ----------------------------------------------------------------------------
+# CHECKPOINTING CONFIGURATION
+# ----------------------------------------------------------------------------
+# Controls how and when model checkpoints are saved during training
+checkpointing:
+  # Directory to save checkpoints
+  checkpoint_dir: "./checkpoints"
+  
+  # Whether to save the best model only
+  # Saves disk space by only keeping the model with best validation metrics
+  save_best_only: true
+  
+  # Metric to monitor for best model selection
+  monitor: "val_loss"
+  
+  # Whether to save the model after each epoch
+  save_every_epoch: false
+  
+  # Maximum number of checkpoints to keep
+  # Older checkpoints are automatically deleted to save space
+  max_checkpoints: 3
+  
+  # Whether to save optimizer state
+  # Required to resume training from checkpoint
+  save_optimizer_state: true
+
+# ----------------------------------------------------------------------------
+# LOGGING CONFIGURATION
+# ----------------------------------------------------------------------------
+# Configures logging behavior for monitoring training progress
+logging:
+  # Logging level (DEBUG, INFO, WARNING, ERROR)
+  level: "INFO"
+  
+  # Directory to save log files
+  log_dir: "./logs"
+  
+  # Whether to log to console
+  log_to_console: true
+  
+  # Whether to log to file
+  log_to_file: true
+  
+  # Whether to use TensorBoard for experiment tracking
+  use_tensorboard: true
+  
+  # Directory for TensorBoard logs
+  tensorboard_dir: "./runs"
+  
+  # Whether to log training progress every N steps
+  log_every_n_steps: 10
+  
+  # Whether to log model gradients
+  log_gradients: false
+  
+  # Whether to log learning rate
+  log_learning_rate: true
+
+# ----------------------------------------------------------------------------
+# DISTRIBUTED TRAINING CONFIGURATION
+# ----------------------------------------------------------------------------
+# Settings for distributed training across multiple GPUs or nodes
+distributed:
+  # Whether to use distributed training
+  use_distributed: false
+  
+  # Number of GPUs to use
+  num_gpus: 1
+  
+  # Whether to use DataParallel (single-node, multiple GPUs)
+  use_data_parallel: false
+  
+  # Whether to use DistributedDataParallel (multi-node)
+  use_ddp: false
+  
+  # Local rank for distributed training
+  local_rank: -1
+  
+  # Backend for distributed training
+  dist_backend: "nccl"
+  
+  # Master address for distributed training
+  master_addr: "localhost"
+  
+  # Master port for distributed training
+  master_port: "12355"
+
+# ----------------------------------------------------------------------------
+# OPTIMIZER CONFIGURATION
+# ----------------------------------------------------------------------------
+# Advanced optimizer settings for better convergence
+optimizer:
+  # Type of optimizer (AdamW, Adam, SGD)
+  type: "AdamW"
+  
+  # Beta parameters for Adam/AdamW
+  beta1: 0.9
+  beta2: 0.999
+  
+  # Epsilon for numerical stability
+  epsilon: 1.0e-8
+  
+  # Whether to use bias correction
+  bias_correction: true
+  
+  # Gradient clipping strategy
+  gradient_clipping: "norm"  # norm or value
+  
+  # Whether to apply gradient clipping to all parameters
+  clip_all_params: true
+
+# ----------------------------------------------------------------------------
+# EXPERIMENT TRACKING CONFIGURATION
+# ----------------------------------------------------------------------------
+# Settings for tracking experiments and results
+experiment:
+  # Name of the experiment
+  name: "clinical_transformer_finetuning"
+  
+  # Version of the experiment
+  version: "v1.0"
+  
+  # Description of the experiment
+  description: "Fine-tuning PubMedBERT for clinical text classification"
+  
+  # Tags for categorizing experiments
+  tags:
+    - "clinical"
+    - "transformer"
+    - "classification"
+  
+  # Whether to use MLflow for experiment tracking
+  use_mlflow: false
+  
+  # MLflow tracking URI
+  mlflow_tracking_uri: "./mlruns"
+  
+  # Whether to log all metrics to MLflow
+  log_mlflow_metrics: true
+
+# ----------------------------------------------------------------------------
+# DATA VALIDATION CONFIGURATION
+# ----------------------------------------------------------------------------
+# Ensures data quality before training
+data_validation:
+  # Whether to validate data before training
+  validate_data: true
+  
+  # Whether to check for missing values
+  check_missing: true
+  
+  # Whether to check for duplicate samples
+  check_duplicates: true
+  
+  # Whether to check for class imbalance
+  check_imbalance: true
+  
+  # Minimum samples per class for training
+  min_samples_per_class: 10
+  
+  # Maximum imbalance ratio (majority/minority)
+  max_imbalance_ratio: 100
+  
+  # Whether to apply class weights
+  use_class_weights: true
+  
+  # Strategy for handling class imbalance
+  # Options: "weights", "oversample", "undersample"
+  imbalance_strategy: "weights"
+
+# ----------------------------------------------------------------------------
+# INFERENCE CONFIGURATION
+# ----------------------------------------------------------------------------
+# Settings for model inference and prediction
+inference:
+  # Batch size for inference
+  batch_size: 32
+  
+  # Whether to use quantization for inference
+  use_quantization: false
+  
+  # Quantization type (int8, float16)
+  quantization_type: "int8"
+  
+  # Whether to use ONNX runtime for faster inference
+  use_onnx: false
+  
+  # ONNX opset version
+  onnx_opset_version: 14
+  
+  # Whether to use TensorRT optimization
+  use_tensorrt: false
+  
+  # Whether to cache predictions
+  cache_predictions: true
+  
+  # Cache size for predictions
+  cache_size: 10000
+
+# ----------------------------------------------------------------------------
+# SYSTEM RESOURCES CONFIGURATION
+# ----------------------------------------------------------------------------
+# Defines resource limits and allocations
+resources:
+  # Maximum memory to allocate (in GB)
+  max_memory_gb: 16
+  
+  # Maximum CPU cores to use
+  max_cpu_cores: 8
+  
+  # Whether to pin memory for faster data loading
+  pin_memory: true
+  
+  # Whether to use persistent workers for data loading
+  persistent_workers: true
+  
+  # Prefetch factor for data loading
+  prefetch_factor: 2

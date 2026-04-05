@@ -1,0 +1,247 @@
+"""
+Pre-commit hooks configuration for AegisMedBot
+Ensures code quality, security, and consistency before commits
+"""
+
+repos:
+  # ============================================================================
+  # General code quality hooks
+  # ============================================================================
+  
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.5.0
+    hooks:
+      # Check for syntax errors in Python files
+      - id: check-ast
+        name: Check Python AST syntax
+        description: Validates Python files for syntax errors
+        
+      # Check for merge conflicts
+      - id: check-merge-conflict
+        name: Check for merge conflicts
+        description: Ensures no merge conflict markers remain
+        
+      # Check for debug statements
+      - id: debug-statements
+        name: Check for debug statements
+        description: Detects pdb, ipdb, and other debugger statements
+        
+      # Check for broken symlinks
+      - id: check-symlinks
+        name: Check symlinks
+        description: Verifies symbolic links are valid
+        
+      # Check YAML file syntax
+      - id: check-yaml
+        name: Check YAML syntax
+        description: Validates YAML files for correct syntax
+        
+      # Check JSON file syntax
+      - id: check-json
+        name: Check JSON syntax
+        description: Validates JSON files for correct syntax
+        
+      # Check for large files
+      - id: check-added-large-files
+        name: Check large files
+        description: Prevents committing files larger than 5MB
+        args: ['--maxkb=5000']
+        
+      # End of file fixer
+      - id: end-of-file-fixer
+        name: Fix end of files
+        description: Ensures files end with a newline
+        
+      # Trailing whitespace fixer
+      - id: trailing-whitespace
+        name: Fix trailing whitespace
+        description: Removes trailing whitespace characters
+        
+      # Check for case conflicts
+      - id: check-case-conflict
+        name: Check case conflicts
+        description: Detects files with names that differ only in case
+        
+      # Check for executable permissions
+      - id: check-executables-have-shebangs
+        name: Check executables
+        description: Ensures executable files have shebangs
+        
+  # ============================================================================
+  # Python code formatting and linting
+  # ============================================================================
+  
+  - repo: https://github.com/psf/black
+    rev: 23.11.0
+    hooks:
+      - id: black
+        name: Black code formatter
+        description: Formats Python code according to Black style
+        language_version: python3.11
+        args: ['--line-length=100']
+        
+  - repo: https://github.com/PyCQA/isort
+    rev: 5.12.0
+    hooks:
+      - id: isort
+        name: Import sorter
+        description: Sorts Python imports alphabetically
+        args: ['--profile=black', '--line-length=100']
+        
+  - repo: https://github.com/PyCQA/flake8
+    rev: 6.1.0
+    hooks:
+      - id: flake8
+        name: Flake8 linter
+        description: Checks Python code for style and syntax issues
+        args: ['--max-line-length=100', '--extend-ignore=E203,W503']
+        additional_dependencies:
+          - flake8-docstrings
+          - flake8-bugbear
+          - flake8-comprehensions
+          - flake8-simplify
+          
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.7.0
+    hooks:
+      - id: mypy
+        name: MyPy type checker
+        description: Performs static type checking for Python
+        args: ['--ignore-missing-imports', '--follow-imports=silent']
+        additional_dependencies:
+          - types-requests
+          - types-PyYAML
+          - types-redis
+          - pydantic
+          
+  - repo: https://github.com/PyCQA/bandit
+    rev: 1.7.5
+    hooks:
+      - id: bandit
+        name: Bandit security linter
+        description: Finds common security issues in Python code
+        args: ['-c', 'pyproject.toml', '-r', '.']
+        additional_dependencies: ['bandit[toml]']
+        
+  # ============================================================================
+  # Documentation and comments
+  # ============================================================================
+  
+  - repo: https://github.com/asottile/pyupgrade
+    rev: v3.15.0
+    hooks:
+      - id: pyupgrade
+        name: Python syntax upgrade
+        description: Upgrades Python syntax to newer versions
+        args: ['--py311-plus']
+        
+  - repo: https://github.com/PyCQA/docformatter
+    rev: v1.7.5
+    hooks:
+      - id: docformatter
+        name: Docstring formatter
+        description: Formats Python docstrings consistently
+        args: ['--in-place', '--wrap-summaries=100', '--wrap-descriptions=100']
+        
+  # ============================================================================
+  # Security and secrets detection
+  # ============================================================================
+  
+  - repo: https://github.com/Yelp/detect-secrets
+    rev: v1.4.0
+    hooks:
+      - id: detect-secrets
+        name: Detect secrets
+        description: Prevents committing secrets and credentials
+        args: ['--baseline', '.secrets.baseline']
+        
+  - repo: https://github.com/zricethezav/gitleaks
+    rev: v8.18.0
+    hooks:
+      - id: gitleaks
+        name: Git leaks detector
+        description: Scans for hardcoded secrets and credentials
+        
+  # ============================================================================
+  # Dependency and package management
+  # ============================================================================
+  
+  - repo: https://github.com/python-poetry/poetry
+    rev: 1.7.0
+    hooks:
+      - id: poetry-check
+        name: Poetry check
+        description: Validates poetry.lock file matches pyproject.toml
+        
+      - id: poetry-lock
+        name: Poetry lock
+        description: Updates poetry.lock file
+        args: ['--no-update']
+        
+  # ============================================================================
+  # Jupyter notebooks (if present)
+  # ============================================================================
+  
+  - repo: https://github.com/nbQA-dev/nbQA
+    rev: 1.7.0
+    hooks:
+      - id: nbqa-black
+        name: Black for notebooks
+        description: Formats Jupyter notebooks with Black
+      - id: nbqa-isort
+        name: Import sorter for notebooks
+        description: Sorts imports in Jupyter notebooks
+        
+  # ============================================================================
+  # Markdown and text files
+  # ============================================================================
+  
+  - repo: https://github.com/igorshubovych/markdownlint-cli
+    rev: v0.37.0
+    hooks:
+      - id: markdownlint
+        name: Markdown linter
+        description: Lints Markdown files for consistency
+        args: ['--disable', 'MD013']
+        
+  - repo: https://github.com/codespell-project/codespell
+    rev: v2.2.6
+    hooks:
+      - id: codespell
+        name: Spell checker
+        description: Checks for common misspellings
+        args: ['--skip=*.ipynb,*.lock,*.json', '--ignore-words-list=te,fo']
+        
+  # ============================================================================
+  # Docker and container files
+  # ============================================================================
+  
+  - repo: https://github.com/hadolint/hadolint
+    rev: v2.12.0
+    hooks:
+      - id: hadolint
+        name: Dockerfile linter
+        description: Lints Dockerfiles for best practices
+        
+  # ============================================================================
+  # YAML and configuration files
+  # ============================================================================
+  
+  - repo: https://github.com/adrienverge/yamllint
+    rev: v1.32.0
+    hooks:
+      - id: yamllint
+        name: YAML linter
+        description: Lints YAML files for syntax and style
+        args: ['-d', '{extends: relaxed, rules: {line-length: disable}}']
+        
+  # ============================================================================
+  # Shell scripts
+  # ============================================================================
+  
+  - repo: https://github.com/shellcheck-py/shellcheck-py
+    rev: v0.9.0.6
+    hooks:
+      - id: shellcheck
+        name: Shell script linter
+        description: Lints shell scripts for errors and warnings

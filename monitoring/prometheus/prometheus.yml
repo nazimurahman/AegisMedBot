@@ -1,0 +1,195 @@
+"""
+Prometheus Configuration File - Main Monitoring Configuration
+This file configures how Prometheus collects metrics from all services in the MedIntel platform.
+Prometheus is a time-series database that scrapes metrics from configured endpoints at regular intervals.
+"""
+
+# Global configuration that applies to all scrape jobs
+global:
+  # How frequently to scrape targets by default
+  scrape_interval: 15s
+  
+  # How frequently to evaluate rules
+  evaluation_interval: 15s
+  
+  # Timeout for scraping targets
+  scrape_timeout: 10s
+
+# Alerting configuration for sending alerts to Alertmanager
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+            # Alertmanager service endpoint - handles alert deduplication, grouping, and routing
+            - alertmanager:9093
+
+# Rule files that contain alerting and recording rules
+# These are loaded at evaluation_interval intervals
+rule_files:
+  - "alerts.yml"
+
+# Scrape configurations define a set of targets and parameters describing how to scrape them
+scrape_configs:
+  
+  # Job 1: Backend API Service Monitoring
+  - job_name: 'medintel-backend'
+    
+    # Override the global scrape interval for this job
+    scrape_interval: 10s
+    
+    # Service discovery configuration for Kubernetes
+    kubernetes_sd_configs:
+      - role: pod
+        # Only discover pods in the medintel namespace
+        namespaces:
+          names:
+            - medintel
+    
+    # Relabel configuration for filtering and modifying labels
+    relabel_configs:
+      # Keep only pods with app=medintel label
+      - source_labels: [__meta_kubernetes_pod_label_app]
+        regex: medintel
+        action: keep
+      
+      # Keep only pods with component=backend label
+      - source_labels: [__meta_kubernetes_pod_label_component]
+        regex: backend
+        action: keep
+      
+      # Replace the target address with the pod IP and port 8000
+      - source_labels: [__address__]
+        action: replace
+        regex: ([^:]+)(?::\d+)?
+        replacement: $1:8000
+        target_label: __address__
+      
+      # Add pod name as a label
+      - source_labels: [__meta_kubernetes_pod_name]
+        target_label: pod
+      
+      # Add namespace as a label
+      - source_labels: [__meta_kubernetes_namespace]
+        target_label: namespace
+      
+      # Add pod IP as a label
+      - source_labels: [__meta_kubernetes_pod_ip]
+        target_label: pod_ip
+  
+  # Job 2: Agent Service Monitoring
+  - job_name: 'medintel-agents'
+    
+    scrape_interval: 15s
+    
+    kubernetes_sd_configs:
+      - role: pod
+        namespaces:
+          names:
+            - medintel
+    
+    relabel_configs:
+      - source_labels: [__meta_kubernetes_pod_label_app]
+        regex: medintel
+        action: keep
+      
+      - source_labels: [__meta_kubernetes_pod_label_component]
+        regex: agents
+        action: keep
+      
+      - source_labels: [__address__]
+        action: replace
+        regex: ([^:]+)(?::\d+)?
+        replacement: $1:8001
+        target_label: __address__
+      
+      - source_labels: [__meta_kubernetes_pod_name]
+        target_label: agent_name
+      
+      - source_labels: [__meta_kubernetes_namespace]
+        target_label: namespace
+  
+  # Job 3: PostgreSQL Database Monitoring
+  - job_name: 'postgresql'
+    
+    scrape_interval: 30s
+    
+    # Static configuration for PostgreSQL exporter
+    static_configs:
+      - targets:
+          # PostgreSQL exporter runs on port 9187
+          - postgres-exporter:9187
+        labels:
+          # Add custom labels for easier querying
+          database: medintel
+          type: postgresql
+  
+  # Job 4: Redis Cache Monitoring
+  - job_name: 'redis'
+    
+    scrape_interval: 30s
+    
+    static_configs:
+      - targets:
+          # Redis exporter runs on port 9121
+          - redis-exporter:9121
+        labels:
+          cache_type: redis
+          environment: production
+  
+  # Job 5: Qdrant Vector Database Monitoring
+  - job_name: 'qdrant'
+    
+    scrape_interval: 30s
+    
+    static_configs:
+      - targets:
+          # Qdrant metrics endpoint
+          - qdrant:6333
+    metrics_path: /metrics
+    
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+  
+  # Job 6: Node Hardware Metrics
+  - job_name: 'node'
+    
+    scrape_interval: 30s
+    
+    static_configs:
+      - targets:
+          # Node exporter runs on port 9100
+          - node-exporter:9100
+        labels:
+          component: hardware
+          type: node
+  
+  # Job 7: Application Custom Metrics
+  - job_name: 'custom-metrics'
+    
+    scrape_interval: 10s
+    
+    static_configs:
+      - targets:
+          - medintel-backend:8000
+    metrics_path: /metrics
+    
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: service
+        replacement: medintel-api
+  
+  # Job 8: Training Pipeline Metrics
+  - job_name: 'training-pipeline'
+    
+    scrape_interval: 60s
+    scrape_timeout: 30s
+    
+    static_configs:
+      - targets:
+          - mlflow:5000
+    metrics_path: /metrics
+    
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: training_pipeline

@@ -1,0 +1,912 @@
+================================================================================
+AEGISMEDBOT AGENT DESIGN AND ARCHITECTURE
+================================================================================
+
+This document provides a comprehensive explanation of the multi agent system
+design for the AegisMedBot platform. The agent architecture implements a
+hierarchical collaborative model inspired by hospital organizational structures.
+
+================================================================================
+AGENT DESIGN PHILOSOPHY
+================================================================================
+
+The agent system is built on the principle of hierarchical collaborative
+intelligence. Just as a hospital has specialized departments that collaborate
+under central leadership, our agents have specific expertise and work together
+through an orchestrator.
+
+Core Design Principles:
+
+Principle of Single Responsibility
+Each agent has exactly one primary domain of expertise. The Clinical Knowledge
+Agent handles only medical information retrieval. The Risk Agent handles only
+predictive analytics. This separation prevents conflicts and makes each agent
+simpler to develop and maintain.
+
+Principle of Explicit Communication
+Agents communicate through a standardized message protocol. Every message
+includes a unique identifier, sender and recipient fields, message type,
+content payload, and metadata. This structured approach enables reliable
+message routing and comprehensive audit logging.
+
+Principle of Graceful Escalation
+When an agent lacks confidence in its response, it escalates to a more
+capable agent or to a human. The escalation path is predefined and
+testable. This prevents the system from providing potentially incorrect
+information.
+
+Principle of Observable Behavior
+Every agent decision is logged with reasoning. The logs include which
+tools were called, what inputs were provided, what outputs were generated,
+and the confidence score for each decision. This transparency enables
+debugging and regulatory compliance.
+
+================================================================================
+BASE AGENT ABSTRACTION
+================================================================================
+
+Every agent in the system inherits from the BaseAgent abstract class. This
+class defines the contract that all agents must implement.
+
+The BaseAgent class has the following attributes:
+
+name attribute
+This string uniquely identifies the agent within the orchestrator. Agent
+names follow a consistent naming convention using lowercase letters and
+underscores. Examples include clinical_agent, risk_agent, operations_agent.
+
+role attribute
+This string describes the agent's function in human readable terms. The
+role appears in user interfaces and audit logs. Examples include Clinical
+Knowledge Specialist and Risk Prediction Expert.
+
+description attribute
+This longer string provides detailed information about what the agent does.
+The orchestrator uses this description for semantic matching when selecting
+agents for tasks.
+
+config attribute
+This dictionary stores agent specific configuration parameters. Examples
+include model names, API endpoints, timeout values, and confidence thresholds.
+
+status attribute
+This enumerated value tracks the agent's current state. Possible states are
+IDLE when waiting for work, PROCESSING when handling a request,
+WAITING_FOR_HUMAN when escalation is pending, ERROR when a failure occurred,
+and COMPLETED when finished.
+
+current_task attribute
+This string stores the message ID of the request currently being processed.
+It enables tracking of long running operations and prevents concurrent
+processing conflicts.
+
+conversation_context attribute
+This dictionary maintains state across multiple interactions with the same
+conversation. It stores patient identifiers, recent topics, and previous
+agent responses.
+
+The BaseAgent class defines the following core methods:
+
+process method
+This abstract method must be implemented by all concrete agents. It receives
+an AgentMessage object and returns an AgentResponse. The method contains the
+agent's core logic for handling requests. The method should be asynchronous
+to support concurrent processing of multiple requests.
+
+The process method follows this standard flow:
+First, validate the incoming message has all required fields.
+Second, update agent status to PROCESSING and store the task ID.
+Third, classify the query type to determine appropriate handling strategy.
+Fourth, execute domain specific logic using tools and models.
+Fifth, construct a response with appropriate confidence score.
+Sixth, update status to COMPLETED and return the response.
+If any step fails, catch the exception, log it, update status to ERROR,
+and return an error response.
+
+can_handle method
+This method evaluates whether the agent is appropriate for a given task.
+It receives a task type string and a context dictionary. The method returns
+a float between 0 and 1 representing confidence that this agent can handle
+the task.
+
+The default implementation returns 0.5 for all tasks. Concrete agents
+override this method with domain specific logic. For example, the Clinical
+Agent returns 0.9 for task types like medical_query or drug_interaction,
+0.5 for ambiguous tasks, and 0.0 for clearly out of scope tasks like
+bed_management.
+
+escalate_to_human method
+This method handles situations where the agent cannot confidently respond.
+It receives the original message and a reason string explaining why escalation
+is needed. The method updates the agent status to WAITING_FOR_HUMAN and
+returns an AgentResponse with requires_human_confirmation set to True.
+
+The response includes a human readable explanation of why escalation is needed
+and a unique escalation ID for tracking. The orchestrator stores this pending
+escalation and notifies appropriate human operators through the notification
+system.
+
+validate_input method
+This method checks that an incoming message has all required fields. It
+verifies the presence of conversation_id, content, and other mandatory
+fields. Returns True if valid, False otherwise. Invalid messages are
+rejected before processing begins.
+
+log_interaction method
+This asynchronous method records the agent's interaction for audit purposes.
+It receives the incoming message and outgoing response. The method sends
+this data to the audit logging service which stores it in Elasticsearch
+for compliance and debugging.
+
+================================================================================
+AGENT MESSAGE PROTOCOL
+================================================================================
+
+All agent communication uses standardized message formats defined as Pydantic
+models. This ensures type safety and validation at system boundaries.
+
+AgentMessage Class
+This class represents a request sent to an agent or between agents.
+
+The message_id field is a universally unique identifier generated using
+uuid4. This ID tracks the message through the system and correlates logs.
+
+The conversation_id field links messages belonging to the same user
+conversation. All messages in a conversation share this ID.
+
+The sender field identifies which agent or user sent the message. Values
+include user for human inputs and agent names for agent generated messages.
+
+The recipient field identifies the intended target agent or the orchestrator.
+
+The message_type field indicates the purpose of the message. Values include
+request for normal queries, response for answers, escalation for human
+intervention needs, and error for failure notifications.
+
+The content field is a dictionary containing the actual payload. For requests,
+this includes the query string and any metadata. For responses, this includes
+the answer text and supporting information.
+
+The tools_requested field is an optional list of tool names the agent may need
+to fulfill the request. The orchestrator uses this for resource allocation.
+
+The requires_human field is a boolean indicating whether this message needs
+human review regardless of confidence. This is set for sensitive operations
+like medication changes.
+
+The human_approved field is set by the orchestrator after human review.
+It indicates whether the human approved the proposed action.
+
+The confidence field is a float from 0 to 1 indicating the agent's certainty
+in its response or request.
+
+The metadata field stores additional context like user role, patient ID,
+and request source.
+
+The created_at field records the timestamp when the message was created.
+
+The parent_message_id field links responses to the request that triggered them.
+This enables conversation threading.
+
+AgentResponse Class
+This class represents the result of agent processing.
+
+The message_id field echoes the ID from the request message for correlation.
+
+The content field contains the agent's output. For knowledge queries this is
+the answer text. For predictions this is the risk score. For tool calls this
+is the tool result.
+
+The tool_results field lists outputs from any tools the agent invoked. Each
+result includes the tool name, input parameters, output values, and execution
+time.
+
+The confidence field indicates the agent's certainty in this response.
+
+The next_agent field optionally specifies another agent that should process
+this response further. This enables multi agent workflows.
+
+The requires_human_confirmation field indicates whether the response needs
+human approval before being returned to the user.
+
+The error field contains error details if processing failed.
+
+The processing_time_ms field records how long the agent took to generate
+this response.
+
+================================================================================
+ORCHESTRATOR AGENT DESIGN
+================================================================================
+
+The Agent Orchestrator is the central coordinator that manages all specialized
+agents. It is not an agent itself but rather a controller that implements the
+routing and collaboration logic.
+
+Orchestrator Initialization
+When the orchestrator starts, it registers all available agents. Registration
+involves storing a reference to each agent instance along with its name, role,
+and description. The orchestrator also initializes the task delegator and
+context manager components.
+
+Agent Registration Process
+The register_agent method adds an agent to the orchestrator's internal
+registry. It validates that the agent name is unique, then stores the agent
+in a dictionary keyed by name. The orchestrator also extracts the agent's
+capability description for semantic matching.
+
+Message Processing Flow
+The process_message method is the main entry point for user requests. It
+receives a message dictionary and optional conversation ID. The method
+performs the following steps in sequence.
+
+Step one: Retrieve or create conversation context. If no conversation ID
+is provided, the context manager creates a new conversation and generates
+a unique ID. The context includes message history and any patient or session
+state.
+
+Step two: Convert the incoming dictionary to an AgentMessage object. This
+standardizes the message format for internal processing.
+
+Step three: Use the task delegator to select the most appropriate agent
+for handling the query. The delegator returns an agent name and confidence
+score.
+
+Step four: Check if the confidence score meets the human threshold which
+defaults to 0.7. If confidence is below threshold, escalate to human review.
+
+Step five: Route the message to the selected agent using the _route_to_agent
+private method. This method handles the actual agent invocation and any
+subsequent chaining to other agents.
+
+Step six: Update conversation context with the response. The context manager
+stores the last agent used and the response content for future reference.
+
+Step seven: Record processing time metrics and return a formatted response
+to the caller.
+
+Multi Agent Workflow Handling
+The _route_to_agent method implements the logic for chaining multiple agents.
+When an agent returns a response with a next_agent field, the orchestrator
+creates a new message addressed to that agent and routes it recursively.
+This continues until an agent returns a response with no next_agent field.
+
+The recursion depth is limited to prevent infinite loops. The maximum depth
+is configurable with a default of five hops. If the depth is exceeded,
+the orchestrator returns an error and escalates to human.
+
+Context Propagation
+Throughout the multi agent workflow, conversation context propagates to each
+agent. The context includes the original user query, any intermediate results,
+and metadata about the conversation. This enables later agents to benefit
+from work done by earlier agents.
+
+================================================================================
+TASK DELEGATOR DESIGN
+================================================================================
+
+The Task Delegator component is responsible for selecting the most appropriate
+agent for each user query. It uses a hybrid scoring approach combining keyword
+matching, semantic similarity, and context awareness.
+
+Agent Profile Initialization
+The delegator maintains a dictionary of agent profiles. Each profile includes
+a list of capability descriptions, a list of keywords associated with the
+agent's domain, and a confidence threshold specific to that agent.
+
+The clinical agent profile includes keywords like diagnosis, treatment,
+medication, drug, disease, symptom, guideline, protocol, and clinical.
+Its capability descriptions include disease diagnosis, treatment guidelines,
+drug interactions, medical literature, and clinical protocols.
+
+The risk agent profile includes keywords like risk, prediction, probability,
+chance, likelihood, mortality, complication, and prognosis. Its capabilities
+include patient risk assessment, mortality prediction, complication risk,
+and ICU admission prediction.
+
+The operations agent profile includes keywords like bed, occupancy, capacity,
+flow, wait time, resource, staff, schedule, and operation. Its capabilities
+include bed occupancy analysis, patient flow prediction, resource allocation,
+staff utilization, and ER wait times.
+
+The director agent profile includes keywords like KPI, metric, performance,
+financial, revenue, cost, efficiency, quality, outcome, and report. Its
+capabilities include hospital KPIs, financial metrics, department performance,
+executive reports, and quality metrics.
+
+The research agent profile includes keywords like research, study, paper,
+literature, evidence, trial, publication, and journal. Its capabilities
+include medical research, paper summarization, literature review, and
+evidence synthesis.
+
+The compliance agent profile includes keywords like compliance, HIPAA,
+privacy, regulation, audit, policy, secure, and confidential. Its capabilities
+include HIPAA compliance, privacy protection, regulatory requirements,
+and audit logging.
+
+Agent Selection Algorithm
+The select_agent method takes a query string and context dictionary. It
+returns a tuple containing the selected agent name and confidence score.
+
+The algorithm first converts the query to lowercase for case insensitive
+matching. It then iterates through all registered agents, calculating three
+separate scores for each.
+
+The keyword score counts how many of the agent's keywords appear in the query.
+The score is calculated as the number of matching keywords divided by the total
+number of keywords. This gives higher scores to agents whose vocabulary aligns
+with the query.
+
+The semantic score uses a sentence transformer model to compute cosine similarity
+between the query embedding and each capability description embedding. The
+maximum similarity across all capabilities becomes the semantic score. This
+captures meaning beyond simple keyword matching.
+
+The context score looks at recent conversation history. If the same agent was
+used in the previous turn, the context score is 0.8 to encourage continuity.
+Otherwise it is 0.3 to allow switching when appropriate.
+
+These three scores are combined with weights. Keyword matching gets 30 percent
+weight because it is fast but less accurate. Semantic similarity gets 50 percent
+weight because it captures meaning best. Context gets 20 percent weight to
+maintain conversation coherence.
+
+The final score for each agent is the weighted sum. The agent with the highest
+score is selected. If multiple agents have very close scores, the system may
+escalate for clarification.
+
+================================================================================
+CONTEXT MANAGER DESIGN
+================================================================================
+
+The Context Manager maintains conversation state across multiple turns. It
+handles storage, retrieval, and pruning of conversation history.
+
+Conversation Creation
+The create_conversation method generates a new unique conversation ID using
+UUID version 4. It initializes a context dictionary with the conversation ID,
+creation timestamp, empty history list, and empty metadata. The context is
+stored in Redis with a time to live of one hour. If Redis is unavailable,
+the context is stored in memory but will be lost if the orchestrator restarts.
+
+Context Retrieval
+The get_context method takes a conversation ID and returns the corresponding
+context dictionary. It first checks Redis. If found, it deserializes the JSON
+and returns the dictionary. If not found, it returns an empty context with
+just the conversation ID and empty history. This handles cases where the
+conversation expired or was never created.
+
+Context Update
+The update_context method modifies an existing conversation's context. It
+accepts a dictionary of updates. Special handling exists for the history
+field. When history is updated, the method appends the new message to the
+existing list rather than replacing it. It also increments the message count
+and trims the history if it exceeds the maximum of 50 messages.
+
+All other fields are updated by replacing the existing value with the new
+value. The last_updated timestamp is set to the current time. The updated
+context is then serialized and stored back to Redis with the same TTL.
+
+Patient Context Extraction
+The extract_patient_context method retrieves patient specific information
+from the conversation. It scans the conversation history for patient mentions,
+medical record numbers, or explicit patient context assignments. The extracted
+information is returned as a dictionary for use by clinical agents.
+
+The set_patient_context method explicitly assigns patient information to
+the conversation. This is used when a user selects a patient from a list
+or when a patient ID is provided in the API call. Once set, all subsequent
+queries in that conversation assume that patient context.
+
+Relevant History Retrieval
+The get_relevant_history method returns the most recent messages from the
+conversation. It takes a maximum messages parameter defaulting to 10. The
+method returns the last N messages in chronological order. This provides
+enough context for the LLM to understand the conversation without exceeding
+token limits.
+
+In a more sophisticated implementation, this method would use semantic
+similarity to select only messages relevant to the current query. This
+would reduce token usage and improve response quality.
+
+================================================================================
+CLINICAL KNOWLEDGE AGENT DETAILS
+================================================================================
+
+The Clinical Knowledge Agent is the most heavily used agent in the system.
+It provides evidence based medical information through retrieval augmented
+generation.
+
+Query Classification
+The _classify_query private method determines what type of clinical query
+the user is asking. It looks for specific keywords in the query.
+
+If the query contains words like interact, drug, medication, or
+contraindication, it classifies as drug_interaction. This routes to the
+drug interaction checker tool.
+
+If the query contains words like guideline, protocol, recommendation, or
+standard, it classifies as guideline. This routes to the clinical guidelines
+retriever.
+
+If the query contains words like disease, condition, syndrome, or disorder,
+it classifies as disease_info. This routes to the disease information tool.
+
+If none of these patterns match, it classifies as general. This routes to
+the general medical literature retriever.
+
+Drug Interaction Handling
+The _handle_drug_interaction method processes medication safety queries.
+
+First, it extracts medication names from the query. In production, this uses
+a medical named entity recognition model. In the current implementation,
+it uses a simple dictionary of common drug names.
+
+If no medications are found, it returns a helpful error message suggesting
+the user specify drug names clearly.
+
+If medications are found, it calls the DrugInteractionChecker tool which
+queries a drug database for known interactions. The tool returns a list of
+interactions with severity levels and descriptions.
+
+The method then retrieves supporting literature from PubMed to provide
+evidence for the interaction information. This grounds the response in
+authoritative sources.
+
+The final response includes the list of medications checked, any interactions
+found with severity ratings, links to supporting literature, and a disclaimer
+that this information is for reference only and does not replace professional
+medical advice.
+
+The confidence score is reduced if the interaction severity is high. If any
+severe interactions are found, the response requires human confirmation before
+being shown to the user.
+
+Guideline Query Handling
+The _handle_guideline_query method retrieves clinical practice guidelines.
+
+It extracts the medical condition from the query using the same named entity
+recognition approach. If no condition is identified, it asks the user to
+specify.
+
+The MedicalRetriever tool has a specific method for retrieving guidelines.
+It queries multiple sources including specialty society websites, the National
+Guideline Clearinghouse, and the hospital's internal guideline repository.
+
+The retrieved guidelines are synthesized into a coherent summary. The summary
+includes the key recommendations, the strength of evidence, and the source
+organization.
+
+The response includes the condition name, the synthesized guidelines, and
+a disclaimer that guidelines may vary by region and institution. The
+confidence score is based on the recency and authority of the retrieved
+guidelines.
+
+Disease Information Handling
+The _handle_disease_info method provides comprehensive disease education.
+
+It extracts the disease name from the query. If none is found, it asks for
+clarification.
+
+The disease information retrieval fetches structured data about symptoms,
+diagnostic criteria, treatment options, prognosis, and prevention strategies.
+This information comes from multiple sources including medical textbooks,
+professional society guidelines, and peer reviewed literature.
+
+The response is organized into clear sections for symptoms, diagnosis,
+treatment, and prognosis. Each section cites its sources. This format makes
+the information easy to read and verify.
+
+General Clinical Query Handling
+The _handle_general_clinical method handles queries that don't fit specific
+categories. It performs a general retrieval from the medical knowledge base
+using the query as is.
+
+The retriever fetches the top five most relevant documents. These are passed
+to the language model along with the original query. The model generates a
+response that synthesizes information from all retrieved documents.
+
+The response includes citations linking each claim to its source document.
+This transparency allows users to verify information and assess source
+authority.
+
+================================================================================
+RISK PREDICTION AGENT DETAILS
+================================================================================
+
+The Risk Prediction Agent uses machine learning models to forecast patient
+outcomes and identify high risk individuals.
+
+Feature Extraction
+The agent first extracts relevant features from patient data. Features include
+demographics like age and gender, vital signs like heart rate and blood pressure,
+lab results like white blood cell count and creatinine, and historical information
+like previous admissions and chronic conditions.
+
+Each feature is normalized to a standard scale. Age is measured in years.
+Heart rate is beats per minute. Lab values are converted to standard units.
+Categorical variables like gender are one hot encoded.
+
+The feature vector is passed to the prediction models. The models expect
+input vectors of a specific length. Missing features are filled with
+default values or imputed using the mean from similar patients.
+
+Mortality Prediction
+The mortality prediction model estimates the probability that a patient will
+die during their hospital stay. This model uses a transformer architecture
+trained on historical patient data.
+
+The model outputs a risk score from 0 to 1. Scores above 0.5 indicate high
+risk. The agent also provides the top contributing factors for the prediction.
+For example, a patient might be high risk due to elevated creatinine, low
+blood pressure, and advanced age.
+
+The response includes the risk score as a percentage, the factors that
+contributed most to the score, and suggested interventions to reduce risk.
+These suggestions come from clinical guidelines for the identified risk factors.
+
+ICU Admission Prediction
+The ICU admission predictor forecasts whether a patient will require transfer
+to the intensive care unit within the next 24 hours. This uses an LSTM model
+that processes the patient's vital sign time series.
+
+Unlike the mortality model which uses static features, the ICU prediction
+model looks at trends over time. It analyzes how vital signs are changing
+and identifies deterioration patterns.
+
+The model outputs a probability of ICU admission. It also identifies which
+vital signs are showing concerning trends. For instance, decreasing oxygen
+saturation or increasing heart rate might drive the prediction.
+
+The response includes the risk score, the concerning trends identified,
+and recommendations for monitoring frequency. High risk patients might
+need hourly vital sign checks instead of every four hours.
+
+Complication Prediction
+The complication predictor identifies patients at risk for specific adverse
+events like sepsis, acute kidney injury, or cardiac arrest. Each complication
+has its own model trained on cases of that complication.
+
+These models use a combination of static patient characteristics and dynamic
+vital sign and lab trends. The sepsis model looks for signs of infection
+combined with organ dysfunction. The kidney injury model tracks creatinine
+trends and urine output.
+
+For each complication, the agent provides the risk score and the specific
+factors driving that risk. This enables targeted preventive interventions.
+For example, a patient at high risk for acute kidney injury might receive
+fluid optimization and nephrotoxic medication review.
+
+================================================================================
+HOSPITAL OPERATIONS AGENT DETAILS
+================================================================================
+
+The Hospital Operations Agent monitors and predicts resource utilization
+across the facility.
+
+Bed Occupancy Tracking
+The agent continuously queries the bed management system to get current
+occupancy for each unit. It tracks total beds, occupied beds, and available
+beds. It also tracks which beds are occupied by which patients and for how
+long.
+
+The agent uses this data to predict when beds will become available. By
+analyzing average length of stay by diagnosis and unit, it estimates discharge
+timing. This helps with admission planning and patient placement.
+
+The response to bed availability queries includes current counts and
+predictions for the next 24 hours. It also suggests alternative units
+if the requested unit is full.
+
+Patient Flow Prediction
+The agent models patient movement through the hospital. It tracks patients
+from emergency department arrival, through admission, to inpatient stay,
+to discharge.
+
+Using historical data, the agent predicts emergency department wait times
+based on current arrival rates and treatment capacity. It forecasts when
+the emergency department will reach capacity and which hours are typically
+busiest.
+
+The flow predictions help administrators allocate staff and resources.
+If the emergency department is predicted to be busy at 2 PM, additional
+staff can be scheduled for that time.
+
+Staff Utilization Optimization
+The agent analyzes staff schedules and patient acuity to identify staffing
+gaps. It compares required staffing levels based on patient needs against
+scheduled staff.
+
+If a unit is understaffed relative to patient acuity, the agent recommends
+calling in additional staff or transferring stable patients to lower acuity
+units. If a unit is overstaffed, it recommends sending staff home or to
+busier units.
+
+The agent also tracks shift swap requests and helps find coverage. When a
+nurse requests a shift off, the agent identifies qualified nurses who are
+not scheduled and notifies them of the opportunity.
+
+Equipment Availability
+The agent tracks the location and status of critical equipment like
+ventilators, infusion pumps, and portable X ray machines. It knows which
+equipment is in use, which is available, and which is in maintenance.
+
+When a clinician needs a piece of equipment, the agent finds the nearest
+available unit. It can also predict future demand based on scheduled
+procedures and typical usage patterns.
+
+The equipment tracking reduces time spent searching for devices and ensures
+critical equipment is available when needed.
+
+================================================================================
+COMPLIANCE AND PRIVACY AGENT DETAILS
+================================================================================
+
+The Compliance and Privacy Agent enforces data protection policies and
+maintains audit trails.
+
+Protected Health Information Detection
+The agent uses multiple strategies to identify PHI in text and data.
+
+Regular expression patterns detect common PHI formats. These patterns match
+medical record numbers formatted as three digits dash two digits dash four
+digits. They match phone numbers in various formats. They match email
+addresses, social security numbers, and dates.
+
+A named entity recognition model specifically trained for medical PHI
+provides deeper detection. This model identifies patient names, locations,
+and other identifiers that regex might miss. The model was trained on
+de identified clinical notes with PHI annotations.
+
+All detected PHI is flagged with its type and location. The agent logs
+the detection event for audit purposes but does not log the actual PHI.
+
+Data Redaction
+When PHI is detected in a context that should not have access, the agent
+redacts it. Redaction replaces the sensitive text with a placeholder like
+REDACTED or a generic label like PATIENT_NAME.
+
+The redaction preserves the structure of the text so clinical meaning
+is not lost. For example, PATIENT_NAME had a heart attack still conveys
+the medical event without identifying the patient.
+
+The agent maintains an audit log of all redactions including what was
+redacted, why, and who requested the data. This supports regulatory
+compliance and security investigations.
+
+K Anonymity for Cross Hospital Queries
+When the system queries other hospitals for similar cases, it must protect
+patient privacy. The k anonymity algorithm ensures that each query response
+could apply to at least k different patients.
+
+The agent generalizes quasi identifiers like age from exact values to ranges.
+A patient age 45 becomes age 40 to 50. Geographic location becomes region
+instead of specific hospital. Diagnosis codes generalize to broader categories.
+
+After generalization, the agent checks how many patients match the generalized
+query. If fewer than k patients match, it further generalizes until the
+k threshold is met. This makes it impossible to identify individual patients
+from the query results.
+
+Differential Privacy for Population Statistics
+For aggregate reporting like average length of stay by department, the agent
+adds calibrated noise to the results. This noise is mathematically proven to
+prevent inference about individual patients while preserving statistical
+utility for population level analysis.
+
+The amount of noise depends on the sensitivity of the query and the desired
+privacy budget. More private queries get more noise but less accuracy.
+The system tracks privacy budget usage to prevent privacy loss over time.
+
+Audit Logging
+Every access to patient data is logged with complete details. The log includes
+who accessed the data, when they accessed it, what data they accessed, why they
+accessed it, and what they did with it.
+
+The audit logs are stored in Elasticsearch for searching and analysis. They
+are retained for the legally required period, typically seven years. The logs
+themselves are encrypted and access to them is restricted to compliance officers.
+
+Regular audits scan these logs for suspicious patterns like unusual access
+times, excessive data retrieval, or accesses without documented clinical need.
+Alerts trigger when anomalies are detected.
+
+================================================================================
+AGENT COLLABORATION PATTERNS
+================================================================================
+
+The agents collaborate through several standard patterns.
+
+Sequential Processing Pattern
+In this pattern, one agent processes the query and passes results to another
+agent for additional processing. For example, the Clinical Agent retrieves
+medical literature, then the Research Agent summarizes it.
+
+The orchestrator handles the chaining automatically when an agent returns a
+response with the next_agent field populated. The receiving agent gets the
+previous agent's output as input.
+
+This pattern works well for pipelines where each step transforms or enriches
+the data. It allows specialization where each agent does what it does best.
+
+Parallel Processing Pattern
+Some queries benefit from multiple agents working simultaneously. For example,
+a query about patient prognosis might need both the Risk Agent for predictions
+and the Clinical Agent for treatment options.
+
+The orchestrator can invoke multiple agents in parallel using asyncio.gather.
+All agents process the same query independently. Their responses are combined
+by a synthesis agent or by the orchestrator directly.
+
+This pattern reduces latency for queries that require multiple perspectives.
+The total response time is the maximum of the individual agent times rather
+than the sum.
+
+Human in the Loop Pattern
+For sensitive decisions like medication changes or discharge planning, the
+system requires human confirmation. The agent sets requires_human_confirmation
+to True in its response.
+
+The orchestrator holds the response and notifies appropriate human reviewers.
+The notification goes through the hospital's existing communication channels
+like secure messaging or the EHR system.
+
+When the human approves or rejects the proposal, they provide a reason.
+The orchestrator resumes processing, either returning the approved response
+or explaining the rejection to the user.
+
+Voting Pattern
+For high stakes decisions, multiple agents may vote on the correct answer.
+Each agent provides a response with a confidence score. The orchestrator
+aggregates the votes, weighting each by confidence.
+
+If the weighted vote exceeds a threshold, the decision proceeds. If not,
+or if the votes are split, the system escalates to human review. This pattern
+is used for complex differential diagnosis where no single agent has high
+confidence.
+
+================================================================================
+PERFORMANCE OPTIMIZATIONS
+================================================================================
+
+Several optimizations ensure agents respond quickly despite complex processing.
+
+Model Caching
+The embedding model results are cached using a least recently used cache.
+When the same text is embedded multiple times, the cached result returns
+immediately. This dramatically speeds up repeated queries.
+
+The transformer model predictions are also cached for identical inputs.
+If a user asks the same clinical question twice, the second response comes
+from cache in milliseconds rather than seconds.
+
+Asynchronous Processing
+All agent methods are asynchronous using Python's asyncio. This allows a
+single worker to handle multiple requests concurrently. While one request
+is waiting for a database query, another request can be processing.
+
+The orchestrator uses asyncio.gather to run parallel operations like
+querying multiple knowledge sources simultaneously. The total time is
+the slowest source rather than the sum of all sources.
+
+Connection Pooling
+Database connections are pooled and reused rather than created per request.
+PostgreSQL connection pooling with PgBanger manages up to 100 concurrent
+connections. Redis maintains a persistent connection pool.
+
+Connection pooling eliminates the overhead of establishing database
+connections for each request. It also prevents connection exhaustion
+under high load.
+
+Model Quantization
+The transformer models are quantized from 32 bit floating point to 8 bit
+integers. Quantization reduces model size by 75 percent and speeds up
+inference by 2 to 3 times.
+
+The accuracy loss from quantization is minimal for medical question answering.
+The tradeoff between speed and accuracy is well worth it for production
+deployment.
+
+Batched Inference
+When multiple requests for the same model arrive simultaneously, they are
+batched together for a single inference pass. This is more efficient than
+processing each request separately.
+
+The inference server accumulates requests for up to 50 milliseconds or until
+the batch reaches a maximum size. Then it runs one inference on all requests
+and distributes the results.
+
+================================================================================
+ERROR HANDLING AND RESILIENCE
+================================================================================
+
+The agent system includes comprehensive error handling to maintain availability.
+
+Graceful Degradation
+When a specific agent fails, the orchestrator attempts to handle the query
+with a different agent. If the Clinical Agent is unavailable, the Research
+Agent might partially answer using literature search.
+
+If no agent can handle the query, the system returns a helpful message
+explaining the limitation and suggesting alternatives. It never returns
+a raw error or stack trace to the user.
+
+Retry Logic
+Transient failures trigger automatic retries. Network timeouts, database
+connection drops, and temporary model unavailability are retried up to
+three times.
+
+The retry uses exponential backoff. The first retry waits one second,
+the second waits two seconds, the third waits four seconds. This prevents
+overwhelming a struggling service with immediate retries.
+
+Circuit Breakers
+When an agent fails repeatedly, a circuit breaker opens. Subsequent requests
+fail fast without attempting the operation. After a timeout, the circuit
+closes partially and allows one test request.
+
+If the test request succeeds, the circuit closes fully and normal operation
+resumes. If it fails, the circuit opens again with a longer timeout. This
+pattern prevents cascading failures when a dependency is down.
+
+Timeout Management
+Each agent operation has a timeout. Clinical queries timeout after 10 seconds.
+Risk predictions after 5 seconds. Operations queries after 3 seconds.
+
+If an agent exceeds its timeout, the orchestrator cancels the operation and
+returns a timeout error. The user is told the system is taking longer than
+expected and invited to try again or rephrase the query.
+
+Dead Letter Queue
+Failed messages that cannot be processed even after retries go to a dead
+letter queue. An administrator reviews these messages to identify systemic
+issues.
+
+The dead letter queue preserves the original message and the error that
+caused failure. This enables debugging and recovery of important requests
+that failed due to transient conditions.
+
+================================================================================
+MONITORING AND OBSERVABILITY
+================================================================================
+
+Every agent exposes metrics for monitoring system health.
+
+Agent Metrics
+Each agent tracks the number of requests received, the number successfully
+processed, the number that errored, and the number escalated to human.
+It also tracks average and 95th percentile processing time.
+
+These metrics are exposed as Prometheus gauges and counters. The monitoring
+system scrapes them every 15 seconds.
+
+Confidence Distribution
+Agents track the distribution of confidence scores in their responses.
+This helps identify when agents are frequently uncertain, indicating
+potential training data gaps or model drift.
+
+A sudden drop in average confidence triggers an alert for model evaluation.
+The data science team investigates whether retraining is needed.
+
+Tool Usage Statistics
+The system tracks which tools each agent uses and how often. This reveals
+which capabilities are most valuable and which are rarely used.
+
+Rarely used tools might be candidates for removal. Frequently used tools
+might need optimization or caching.
+
+Error Tracking
+All agent errors are logged with stack traces and context. Errors are grouped
+by type and source to identify patterns.
+
+If a particular error type exceeds a threshold, an alert triggers. For example,
+if the PubMed API returns 500 errors for more than 5 percent of requests,
+the on call engineer investigates.
+
+Latency Monitoring
+The orchestrator tracks latency at each stage of processing. It measures
+time spent in agent selection, context loading, agent processing, and
+response formatting.
+
+Latency breakdowns identify bottlenecks. If agent processing time increases
+but context loading is stable, the issue is in the agent itself. If context
+loading time increases, the issue is in Redis or the network.

@@ -1,0 +1,382 @@
+================================================================================
+AEGISMEDBOT DEVELOPMENT SETUP GUIDE
+================================================================================
+
+This document provides comprehensive instructions for setting up a development
+environment for the AegisMedBot platform. Follow these steps in order to create
+a fully functional development instance.
+
+================================================================================
+PREREQUISITES
+================================================================================
+
+Before beginning the setup, ensure your development machine meets these
+minimum requirements.
+
+Hardware Requirements
+The development environment requires at least 16 gigabytes of RAM. The
+transformer models need significant memory even in development mode.
+8 gigabytes is insufficient and will cause out of memory errors.
+
+The CPU should have at least 4 cores. The system runs multiple services
+concurrently including the API server, agent workers, and databases.
+More cores provide better performance.
+
+Disk space needs at least 50 gigabytes free. The databases, models, and
+logs accumulate quickly. Docker images also consume significant space.
+
+For GPU acceleration which is optional but recommended, an NVIDIA GPU
+with at least 8 gigabytes of VRAM is needed. The transformer models run
+much faster on GPU than CPU.
+
+Software Requirements
+The operating system should be Ubuntu 22.04 or newer, macOS 12 or newer,
+or Windows 11 with WSL2. Linux is preferred for production parity.
+
+Python version 3.11 or 3.12 is required. Python 3.10 may work but is not
+tested. Python 3.13 is not yet supported by all dependencies.
+
+Docker version 24 or newer is required. Docker Compose version 2.20 or
+newer is also required. The system uses Docker Compose V2 features.
+
+Git version 2.30 or newer is needed to clone the repository and manage
+branches.
+
+PostgreSQL client tools version 15 are needed for database initialization.
+These include psql and pg_dump.
+
+Redis command line tools are optional but helpful for debugging cache
+issues.
+
+================================================================================
+ENVIRONMENT SETUP STEPS
+================================================================================
+
+Follow these steps in order. Do not skip steps as later steps depend on
+earlier ones.
+
+Step 1: Install Python and Package Manager
+First, install Python 3.11 using your operating system's package manager.
+On Ubuntu, the command is sudo apt install python3.11 python3.11-venv
+python3.11-dev.
+
+On macOS, use brew install python@3.11. On Windows with WSL2, follow the
+Ubuntu instructions within the WSL2 environment.
+
+Install pipx which manages Python applications in isolated environments.
+The command is python3.11 -m pip install --user pipx followed by
+pipx ensurepath.
+
+Install Poetry using pipx. Poetry is the dependency manager for this project.
+The command is pipx install poetry. After installation, restart your terminal
+or source your shell configuration.
+
+Verify the installation with poetry --version. The version should be 1.7
+or higher.
+
+Step 2: Install Docker and Docker Compose
+Install Docker Desktop for your operating system from the Docker website.
+Docker Desktop includes both the Docker engine and Docker Compose.
+
+On Ubuntu, you can install Docker Engine directly using the convenience
+script. The command is curl -fsSL https://get.docker.com -o get-docker.sh
+followed by sudo sh get-docker.sh.
+
+Add your user to the docker group to run Docker without sudo. The command
+is sudo usermod -aG docker your_username. You must log out and back in
+for this to take effect.
+
+Verify Docker installation with docker --version. The version should be
+24 or higher.
+
+Verify Docker Compose with docker compose version. Note the space between
+docker and compose. The version should be 2.20 or higher.
+
+Step 3: Install NVIDIA Container Toolkit for GPU Support
+If you have an NVIDIA GPU, install the NVIDIA Container Toolkit to allow
+Docker containers to access the GPU.
+
+For Ubuntu, add the NVIDIA package repository with these commands:
+distribution equals ubuntu version codename detected by the script.
+curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | sudo gpg
+--dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg.
+
+Install the toolkit with sudo apt update and sudo apt install
+nvidia-container-toolkit.
+
+Configure Docker to use the NVIDIA runtime with sudo nvidia-ctk runtime
+configure --runtime=docker. Then restart Docker with sudo systemctl
+restart docker.
+
+Verify GPU access with docker run --rm --gpus all nvidia/cuda:11.8-base
+nvidia-smi. You should see your GPU information.
+
+Step 4: Clone the Repository
+Choose a directory for the project. The home directory is fine but a
+development directory under home is better.
+
+Clone the repository with git clone https://github.com your repository
+URL AegisMedBot.git. Replace the URL with the actual repository location.
+
+Navigate into the cloned directory with cd AegisMedBot.
+
+The repository contains the complete project structure with backend,
+frontend, agents, and configuration directories.
+
+Step 5: Configure Environment Variables
+Copy the example environment file to create your own configuration.
+The command is cp .env.example .env.
+
+Open the .env file in a text editor. Each line defines an environment
+variable used by the system.
+
+Generate a strong secret key for JWT signing. Use python3.11 -c
+import secrets print secrets token urlsafe 32 to generate a random key.
+Copy the output into the SECRET_KEY field.
+
+Set secure passwords for the database and Redis. Do not use the example
+passwords in production. Use a password generator to create strong random
+passwords.
+
+Set POSTGRES_PASSWORD to a strong password. Set REDIS_PASSWORD to a
+different strong password. Remember these passwords as you will need
+them for database connections.
+
+Set ENVIRONMENT to development. This enables debug mode and reloading.
+Do not set to production in development.
+
+Set all other variables to their defaults for now. You can change them
+later as needed.
+
+Step 6: Install Python Dependencies
+Poetry will create a virtual environment and install all dependencies.
+Run poetry install from the project root directory.
+
+Poetry reads the pyproject.toml file to determine dependencies. It creates
+a virtual environment in a cache directory and installs packages there.
+
+The installation may take several minutes. There are many dependencies
+including PyTorch, Transformers, FastAPI, and Gradio.
+
+After installation completes, activate the virtual environment with
+poetry shell. Your prompt should change to indicate you are in the
+virtual environment.
+
+Verify the installation by running python3.11 -c import torch and
+import fastapi. Both should complete without errors.
+
+Step 7: Start Docker Services
+The development environment requires PostgreSQL, Redis, and Qdrant.
+These run as Docker containers.
+
+From the project root, run docker compose up -d. The -d flag runs
+containers in the background.
+
+Docker Compose reads the docker compose.yml file and starts all defined
+services. The first start will download container images which may take
+several minutes.
+
+Check that all containers are running with docker compose ps. All services
+should show status Up. If any service shows Exit or Restarting, check the
+logs with docker compose logs service_name.
+
+The PostgreSQL container exposes port 5432. The Redis container exposes
+port 6379. The Qdrant container exposes port 6333 for HTTP and 6334 for
+gRPC.
+
+Step 8: Initialize the Database
+The database needs tables created before the application can run.
+Run the migration command with poetry run alembic upgrade head.
+
+Alembic reads the migration scripts in database/migrations/versions and
+applies them in order. The head revision is the most recent migration.
+
+You should see output showing each migration being applied. The final
+message should say something like Running upgrade to head.
+
+If you see errors about missing database connection, check that the
+PostgreSQL container is running and that the .env file has correct
+database credentials.
+
+Step 9: Load Sample Data
+The system needs sample data for testing. Load the sample dataset with
+poetry run python scripts/setup/load_sample_data.py.
+
+This script creates sample patients, admissions, lab results, and vital
+signs. It also loads sample medical literature into the vector database.
+
+The script uses the same database connections as the main application.
+It will create approximately 100 sample patients and 1000 sample lab
+results.
+
+The loading process takes about one minute. You will see progress messages
+as each type of data is loaded.
+
+After completion, verify the data is present by running poetry run python
+-c from backend.core.database import SessionLocal from database.models.
+patient import Patient session equals SessionLocal print session query
+Patient count.
+
+You should see a count of 100 or more patients.
+
+Step 10: Start the Backend Server
+The backend API server provides the agent orchestration and REST endpoints.
+Start it with poetry run uvicorn backend.main:app --reload --port 8000.
+
+The --reload flag enables auto reloading when code changes. This is
+essential for development. The --port flag sets the listening port.
+
+You should see output indicating the server started. The final line should
+say Application startup complete.
+
+Open a web browser and navigate to http://localhost:8000/health. You should
+see a JSON response with status healthy.
+
+The API documentation is available at http://localhost:8000/api/docs when
+in development mode. This interactive documentation allows testing API
+endpoints.
+
+Step 11: Start the Frontend Server
+Open a new terminal window. Navigate to the project root and activate the
+poetry shell with poetry shell.
+
+Start the Gradio frontend with poetry run python frontend/app.py.
+
+The frontend server runs on port 7860. You will see output showing the
+local URL and the public URL.
+
+Open a web browser and navigate to http://localhost:7860. You should see
+the AegisMedBot chat interface.
+
+Test the connection by typing a simple question like What is the current
+time. The backend should process the request and return a response.
+
+Step 12: Verify Complete System Functionality
+Run through a complete workflow to verify everything is working.
+
+First, ask a clinical question. Type What are the symptoms of pneumonia.
+The Clinical Agent should respond with a list of symptoms including cough,
+fever, and difficulty breathing.
+
+Second, ask an operations question. Type How many ICU beds are available.
+The Operations Agent should query the database and return a number.
+
+Third, ask a risk question. This requires a patient ID. Type Predict
+mortality risk for patient P12345. The system should return a risk score
+and contributing factors.
+
+If all three queries work, your development environment is fully functional.
+
+================================================================================
+TROUBLESHOOTING COMMON ISSUES
+================================================================================
+
+This section addresses common problems encountered during setup.
+
+Issue: Docker containers fail to start
+Solution: Check if ports are already in use. PostgreSQL uses port 5432.
+Redis uses 6379. Qdrant uses 6333. Stop any existing services using these
+ports. On Linux, use sudo lsof -i :5432 to find processes using the port.
+
+Issue: Database migration fails with connection error
+Solution: Verify PostgreSQL is running with docker compose ps postgres.
+Check the .env file for correct POSTGRES_PASSWORD. The password must match
+the one set in docker compose.yml.
+
+Issue: Poetry install fails with out of memory
+Solution: PyTorch is a large package. Increase your system swap space.
+On Linux, create a 4 gigabyte swap file with sudo fallocate -l 4G swapfile
+and sudo mkswap swapfile and sudo swapon swapfile.
+
+Issue: GPU not detected in containers
+Solution: Verify NVIDIA Container Toolkit installation with docker run
+--rm --gpus all nvidia/cuda:11.8-base nvidia-smi. If this fails, reinstall
+the toolkit and restart Docker.
+
+Issue: Frontend cannot connect to backend
+Solution: Check that backend is running on port 8000. Check CORS settings
+in backend/core/config.py. The development frontend URL localhost 7860
+must be in BACKEND_CORS_ORIGINS.
+
+Issue: Agent responses are very slow
+Solution: The first request after starting the backend loads models into
+memory. This takes 10 to 30 seconds. Subsequent requests are faster. If
+still slow, check if GPU is being used. CPU inference is significantly
+slower.
+
+Issue: Vector search returns no results
+Solution: Sample data may not have loaded correctly. Run the load sample
+data script again. Check Qdrant container logs with docker compose logs
+qdrant for errors.
+
+================================================================================
+DEVELOPMENT WORKFLOW
+================================================================================
+
+After setup is complete, follow this workflow for development.
+
+Code Changes
+Make changes to the code in your editor. The backend auto reloads when
+files change thanks to the --reload flag. The frontend does not auto reload.
+Restart the frontend server after frontend changes.
+
+When you add new dependencies, add them to pyproject.toml with poetry add
+package_name. Do not manually edit the poetry.lock file.
+
+Run tests before committing with poetry run pytest tests. All tests must
+pass before code is merged.
+
+Database Migrations
+When you change database models, create a migration with poetry run alembic
+revision --autogenerate -m description of change.
+
+Review the generated migration in database/migrations/versions. Ensure it
+contains only the intended changes. Apply the migration with poetry run
+alembic upgrade head.
+
+Docker Container Management
+View running containers with docker compose ps. View logs with docker
+compose logs service_name. Follow logs in real time with docker compose
+logs -f service_name.
+
+Stop all containers with docker compose down. Start them again with
+docker compose up -d. Remove containers and volumes with docker compose
+down -v. This deletes all data.
+
+Debugging
+Use Python debugger by adding import pdb and pdb set trace in your code.
+When the code hits that line, the debugger pauses and gives an interactive
+prompt.
+
+For async code, use the debugpy package. Add import debugpy and
+debugpy listen 5678 at the start of your code. Connect from your IDE
+to localhost port 5678.
+
+Logging is configured to show INFO level messages. Change to DEBUG by
+setting LOG_LEVEL=DEBUG in .env file. This provides much more detail
+about what the system is doing.
+
+================================================================================
+NEXT STEPS
+================================================================================
+
+After successful setup, explore these topics to deepen your understanding.
+
+Read the architecture documentation in docs/architecture. Understand how
+the system fits together before making major changes.
+
+Review the agent implementations in agents directory. Each agent demonstrates
+the BaseAgent interface and specific tool usage.
+
+Study the test suite in tests directory. Tests show expected behavior for
+each component and serve as executable documentation.
+
+Try modifying an agent to add a new capability. Add a new tool to the
+Clinical Agent, then test it through the chat interface.
+
+Set up the monitoring stack by uncommenting the Prometheus and Grafana
+services in docker compose.yml. Access Grafana at localhost 3000 with
+username admin and password admin.
+
+Deploy to a local Kubernetes cluster using Minikube or Kind. This tests
+the production deployment configuration before cloud deployment.

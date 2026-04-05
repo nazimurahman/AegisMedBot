@@ -1,0 +1,98 @@
+# Frontend Gradio application deployment
+
+apiVersion: apps/v1
+kind: Deployment
+
+metadata:
+  name: frontend
+  namespace: medintel
+  labels:
+    app: aegismedbot
+    component: frontend
+    tier: frontend
+
+spec:
+  replicas: 2
+  # Scale frontend for user traffic
+  
+  selector:
+    matchLabels:
+      app: aegismedbot
+      component: frontend
+      tier: frontend
+  
+  template:
+    metadata:
+      labels:
+        app: aegismedbot
+        component: frontend
+        tier: frontend
+      
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "7860"
+        prometheus.io/path: "/metrics"
+    
+    spec:
+      containers:
+      - name: frontend
+        image: aegismedbot/frontend:latest
+        # Custom Gradio frontend image
+        
+        imagePullPolicy: Always
+        
+        ports:
+        - containerPort: 7860
+          name: http
+          protocol: TCP
+        
+        env:
+        - name: API_BASE_URL
+          value: "http://backend-service:8000"
+        
+        - name: WS_URL
+          value: "ws://backend-service:8000"
+        
+        - name: ENVIRONMENT
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: ENVIRONMENT
+        
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "200m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 7860
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 7860
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+      
+      # Affinity for spreading across nodes
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchLabels:
+                  app: aegismedbot
+                  component: frontend
+              topologyKey: kubernetes.io/hostname

@@ -1,0 +1,106 @@
+# Ingress configuration for external access
+# Routes external traffic to appropriate services with SSL termination
+
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+
+metadata:
+  name: medintel-ingress
+  namespace: medintel
+  
+  annotations:
+    # NGINX Ingress Controller annotations
+    
+    nginx.ingress.kubernetes.io/rewrite-target: /
+    # Rewrite paths for routing
+    
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    # Redirect HTTP to HTTPS
+    
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    # Force SSL redirect for all traffic
+    
+    nginx.ingress.kubernetes.io/proxy-body-size: "50m"
+    # Allow larger request bodies for file uploads
+    
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
+    # Timeout for long-running operations
+    
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "300"
+    # Send timeout for WebSocket connections
+    
+    nginx.ingress.kubernetes.io/websocket-services: "backend-service"
+    # Enable WebSocket support for real-time chat
+    
+    nginx.ingress.kubernetes.io/enable-cors: "true"
+    # Enable CORS for frontend
+    
+    nginx.ingress.kubernetes.io/cors-allow-methods: "GET, POST, PUT, DELETE, OPTIONS"
+    # Allowed CORS methods
+    
+    nginx.ingress.kubernetes.io/cors-allow-headers: "DNT,X-CustomHeader,Keep-Alive,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Authorization"
+    # Allowed CORS headers
+    
+    # Rate limiting
+    nginx.ingress.kubernetes.io/limit-rps: "10"
+    # Limit requests per second per client IP
+    
+    nginx.ingress.kubernetes.io/limit-whitelist: "10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
+    # Whitelist internal IPs from rate limiting
+    
+    # Cert-manager for automatic SSL certificates
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    # Use Let's Encrypt for SSL certificates
+
+spec:
+  tls:
+  # TLS configuration for HTTPS
+  - hosts:
+    - medintel.example.com
+    # Replace with actual domain name
+    - api.medintel.example.com
+    - chat.medintel.example.com
+    
+    secretName: medintel-tls
+    # Secret containing SSL certificate
+  
+  rules:
+  # Routing rules for domains
+  - host: medintel.example.com
+    # Main domain for frontend
+    
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: frontend-service
+            port:
+              number: 80
+  
+  - host: api.medintel.example.com
+    # API subdomain for backend
+    
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: backend-service
+            port:
+              number: 8000
+  
+  - host: chat.medintel.example.com
+    # Chat subdomain for WebSocket connections
+    
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: backend-service
+            port:
+              number: 8000

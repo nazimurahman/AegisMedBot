@@ -1,0 +1,41 @@
+# Service for exposing PostgreSQL to other services in the cluster
+
+apiVersion: v1
+kind: Service
+# Service provides stable network endpoint for pods
+
+metadata:
+  name: postgres-service
+  # Service name - used for DNS resolution
+  
+  namespace: medintel
+  
+  labels:
+    app: aegismedbot
+    component: postgres
+    tier: database
+
+spec:
+  selector:
+    # Service routes traffic to pods with these labels
+    
+    app: aegismedbot
+    component: postgres
+    tier: database
+  
+  ports:
+  - port: 5432
+    # Port exposed by the service
+    
+    targetPort: 5432
+    # Port on the pod container
+    
+    protocol: TCP
+    # TCP protocol for database
+    
+    name: postgres
+    # Port name for service discovery
+  
+  type: ClusterIP
+  # ClusterIP is the default - only accessible within cluster
+  # No external exposure for security

@@ -1,0 +1,224 @@
+# Backend API deployment
+# FastAPI application that orchestrates all services
+
+apiVersion: apps/v1
+kind: Deployment
+
+metadata:
+  name: backend
+  namespace: medintel
+  labels:
+    app: aegismedbot
+    component: backend
+    tier: backend
+
+spec:
+  replicas: 3
+  # Scale backend horizontally for API load
+  
+  selector:
+    matchLabels:
+      app: aegismedbot
+      component: backend
+      tier: backend
+  
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  
+  template:
+    metadata:
+      labels:
+        app: aegismedbot
+        component: backend
+        tier: backend
+      
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8000"
+        prometheus.io/path: "/metrics"
+    
+    spec:
+      containers:
+      - name: backend
+        image: aegismedbot/backend:latest
+        # Custom backend image with FastAPI
+        
+        imagePullPolicy: Always
+        
+        ports:
+        - containerPort: 8000
+          name: http
+          protocol: TCP
+        
+        env:
+        # Application configuration
+        - name: API_V1_PREFIX
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: API_V1_PREFIX
+        
+        - name: PROJECT_NAME
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: PROJECT_NAME
+        
+        - name: ENVIRONMENT
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: ENVIRONMENT
+        
+        - name: DEBUG
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: DEBUG
+        
+        - name: SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: db-secrets
+              key: secret_key
+        
+        - name: ACCESS_TOKEN_EXPIRE_MINUTES
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: ACCESS_TOKEN_EXPIRE_MINUTES
+        
+        # Database connections
+        - name: POSTGRES_SERVER
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: POSTGRES_SERVER
+        
+        - name: POSTGRES_USER
+          valueFrom:
+            secretKeyRef:
+              name: db-secrets
+              key: postgres_user
+        
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: db-secrets
+              key: postgres_password
+        
+        - name: POSTGRES_DB
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: POSTGRES_DB
+        
+        - name: DATABASE_URL
+          value: "postgresql://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@$(POSTGRES_SERVER):5432/$(POSTGRES_DB)"
+        
+        # Redis for rate limiting and caching
+        - name: REDIS_HOST
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: REDIS_HOST
+        
+        - name: REDIS_PORT
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: REDIS_PORT
+        
+        - name: REDIS_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: db-secrets
+              key: redis_password
+        
+        # Service endpoints
+        - name: AGENTS_SERVICE_URL
+          value: "http://agents-service:8001"
+        
+        - name: RAG_SERVICE_URL
+          value: "http://rag-service:8002"
+        
+        # Rate limiting
+        - name: RATE_LIMIT_REQUESTS
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: RATE_LIMIT_REQUESTS
+        
+        - name: RATE_LIMIT_PERIOD
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: RATE_LIMIT_PERIOD
+        
+        # Monitoring
+        - name: ENABLE_METRICS
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: ENABLE_METRICS
+        
+        - name: METRICS_PORT
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: METRICS_PORT
+        
+        - name: LOG_LEVEL
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: LOG_LEVEL
+        
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "500m"
+          limits:
+            memory: "1Gi"
+            cpu: "1"
+        
+        volumeMounts:
+        - name: backend-logs
+          mountPath: /app/logs
+        
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8000
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+      
+      volumes:
+      - name: backend-logs
+        emptyDir: {}
+      
+      # Affinity for spreading across nodes
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchLabels:
+                  app: aegismedbot
+                  component: backend
+              topologyKey: kubernetes.io/hostname

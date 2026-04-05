@@ -1,0 +1,60 @@
+# PersistentVolumeClaim for PostgreSQL database storage
+# PVCs request storage resources from the cluster's storage infrastructure
+
+apiVersion: v1
+kind: PersistentVolumeClaim
+# PVC resource type - requests persistent storage
+
+metadata:
+  name: postgres-pvc
+  # Unique name for this PersistentVolumeClaim
+  
+  namespace: medintel
+  # Namespace where this PVC exists
+  
+  labels:
+    # Labels for organizing and selecting this PVC
+    
+    app: aegismedbot
+    # Application label
+    
+    component: postgres
+    # Component identification
+    
+    tier: database
+    # Tier classification
+
+spec:
+  # Specification for the storage request
+  
+  accessModes:
+    # Access modes define how the volume can be mounted
+    
+    - ReadWriteOnce
+    # Volume can be mounted as read-write by a single node
+    # PostgreSQL requires this mode for database consistency
+    
+  storageClassName: standard
+  # Storage class to use - 'standard' is typically provided by cloud providers
+  # This determines the underlying storage type (SSD, HDD, etc.)
+  
+  resources:
+    # Resource requests for storage
+    
+    requests:
+      storage: 50Gi
+      # Request 50 Gibibytes of persistent storage
+      # This is the minimum amount guaranteed
+      
+  volumeMode: Filesystem
+  # Volume will be mounted as a filesystem (not block device)
+  
+  selector:
+    # Optional selector to bind to specific PersistentVolumes
+    
+    matchLabels:
+      # Match PersistentVolumes with these labels
+      
+      app: aegismedbot
+      component: postgres
+      # This ensures we bind to volumes intended for PostgreSQL

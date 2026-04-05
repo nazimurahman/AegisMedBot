@@ -1,0 +1,222 @@
+# AegisMedBot - Core Dependencies
+# This file contains all Python packages needed for the medical AI assistant system
+
+# Core Framework - Web API and application server
+fastapi==0.104.1
+# FastAPI is a modern web framework for building APIs with Python
+# It provides automatic API documentation, validation, and async support
+
+uvicorn[standard]==0.24.0
+# Uvicorn is an ASGI server for running FastAPI applications
+# It handles concurrent connections efficiently for production deployment
+
+# Machine Learning and Deep Learning
+torch==2.1.0
+# PyTorch is the core deep learning framework
+# Used for transformer models, neural networks, and GPU acceleration
+# Provides automatic differentiation and tensor operations
+
+torchvision==0.16.0
+# Computer vision utilities for PyTorch
+# Used for medical image processing if needed
+
+transformers==4.35.0
+# Hugging Face Transformers library
+# Provides pre-trained transformer models like BERT, GPT, etc.
+# Essential for natural language processing in medical domain
+
+sentence-transformers==2.2.2
+# Library for generating sentence embeddings
+# Used for semantic search and retrieval augmented generation
+# Converts medical text into vector representations
+
+datasets==2.14.6
+# Hugging Face datasets library
+# Used for loading and processing medical datasets
+# Provides efficient data loading pipelines
+
+accelerate==0.24.1
+# Library for distributed training and mixed precision
+# Optimizes model training across multiple GPUs
+# Reduces memory usage during training
+
+peft==0.6.2
+# Parameter Efficient Fine Tuning
+# Implements LoRA (Low-Rank Adaptation) for efficient model fine-tuning
+# Reduces trainable parameters by 90 percent while maintaining performance
+
+# Data Processing and Scientific Computing
+numpy==1.24.3
+# Numerical computing library
+# Provides array operations and mathematical functions
+# Used for data preprocessing and model inputs
+
+pandas==2.1.3
+# Data manipulation and analysis library
+# Used for handling structured medical data like patient records
+# Provides DataFrame operations for efficient data processing
+
+scikit-learn==1.3.2
+# Machine learning library for traditional ML algorithms
+# Used for preprocessing, feature engineering, and evaluation metrics
+# Provides train-test split, scalers, and classifiers
+
+scipy==1.11.4
+# Scientific computing library
+# Provides advanced mathematical functions and statistical tools
+# Used for medical data analysis and signal processing
+
+# Database and Caching
+sqlalchemy==2.0.23
+# SQL toolkit and Object Relational Mapper
+# Provides database abstraction for PostgreSQL and other SQL databases
+# Handles connection pooling and query building
+
+asyncpg==0.29.0
+# Asynchronous PostgreSQL driver
+# Enables non-blocking database operations for FastAPI
+# Essential for high-performance database access
+
+alembic==1.12.1
+# Database migration tool for SQLAlchemy
+# Manages schema changes and version control for database
+# Allows rolling back and forward migrations
+
+redis==5.0.1
+# Redis client for Python
+# Used for caching, session storage, and message brokering
+# Provides high-speed in-memory data storage
+
+# Vector Database for RAG
+qdrant-client==1.7.0
+# Client for Qdrant vector database
+# Used for storing and searching document embeddings
+# Enables semantic search for medical literature
+
+# Monitoring and Logging
+python-json-logger==2.0.7
+# JSON formatter for structured logging
+# Produces machine-readable log entries
+# Essential for centralized log management
+
+prometheus-client==0.19.0
+# Prometheus metrics client
+# Exposes application metrics for monitoring
+# Used for performance tracking and alerting
+
+# Security and Authentication
+python-jose[cryptography]==3.3.0
+# JWT (JSON Web Token) implementation
+# Handles token creation, validation, and encryption
+# Essential for user authentication and authorization
+
+passlib[bcrypt]==1.7.4
+# Password hashing library
+# Securely stores user passwords using bcrypt algorithm
+# Provides verification utilities
+
+python-multipart==0.0.6
+# Parser for multipart form data
+# Handles file uploads and form submissions
+# Required for handling HTTP form data
+
+cryptography==41.0.7
+# Cryptographic library for secure data handling
+# Provides encryption, hashing, and key management
+# Used for PHI (Protected Health Information) protection
+
+# API and Networking
+httpx==0.25.1
+# HTTP client for async operations
+# Used for making external API calls to medical databases
+# Supports HTTP/2 and connection pooling
+
+websockets==12.0
+# WebSocket library for real-time communication
+# Enables streaming responses and live updates
+# Used for chat interface and real-time monitoring
+
+# Utilities and Helpers
+python-dotenv==1.0.0
+# Loads environment variables from .env file
+# Manages configuration without hardcoding secrets
+# Essential for security and deployment flexibility
+
+pydantic==2.4.2
+# Data validation library using Python type hints
+# Automatically validates and serializes API data
+# Provides type safety and error checking
+
+pydantic-settings==2.1.0
+# Settings management using Pydantic
+# Handles configuration from environment variables
+# Provides validation for configuration values
+
+click==8.1.7
+# Command-line interface creation library
+# Used for CLI tools and management scripts
+# Provides elegant command parsing
+
+tqdm==4.66.1
+# Progress bar library
+# Shows progress for long-running operations
+# Used for data loading and model training
+
+# Medical and NLP Specific
+nltk==3.8.1
+# Natural Language Toolkit
+# Provides text processing utilities
+# Used for tokenization and stopword removal
+
+spacy==3.7.2
+# Industrial-strength NLP library
+# Used for medical named entity recognition
+# Requires downloading medical language model
+
+# Testing and Development
+pytest==7.4.3
+# Testing framework for Python
+# Enables unit testing and integration testing
+# Provides assertions and fixtures
+
+pytest-cov==4.1.0
+# Coverage reporting for pytest
+# Measures test coverage percentage
+# Ensures code quality and reliability
+
+pytest-asyncio==0.21.1
+# Async test support for pytest
+# Enables testing of asynchronous code
+# Essential for testing FastAPI endpoints
+
+# Production Tools
+gunicorn==21.2.0
+# WSGI HTTP server for production deployment
+# Handles multiple worker processes
+# Provides robust process management
+
+sentry-sdk==1.38.0
+# Error tracking and monitoring
+# Captures exceptions and performance issues
+# Provides real-time error alerts
+
+# Documentation and Code Quality
+black==23.11.0
+# Code formatter for consistent style
+# Automatically formats Python code
+# Ensures code readability and standards
+
+isort==5.12.0
+# Import sorting utility
+# Organizes import statements alphabetically
+# Improves code organization
+
+mypy==1.7.0
+# Static type checker for Python
+# Validates type hints and catches type errors
+# Improves code reliability
+
+flake8==6.1.0
+# Code linting tool
+# Checks for style guide violations and errors
+# Enforces PEP 8 standards

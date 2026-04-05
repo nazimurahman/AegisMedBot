@@ -1,0 +1,523 @@
+# ============================================================================
+# LORA (LOW-RANK ADAPTATION) CONFIGURATION FOR MEDICAL TRANSFORMER TRAINING
+# ============================================================================
+# This configuration file specializes in Low-Rank Adaptation parameters for
+# efficient fine-tuning of large language models on medical data. LoRA
+# dramatically reduces the number of trainable parameters while maintaining
+# or even improving model performance on domain-specific tasks.
+# ============================================================================
+
+# ----------------------------------------------------------------------------
+# LORA ARCHITECTURE CONFIGURATION
+# ----------------------------------------------------------------------------
+# Defines the core LoRA architecture parameters that control adaptation
+lora_architecture:
+  # LoRA rank parameter
+  # Controls the dimension of the low-rank matrices
+  # Higher rank = more expressive power but more parameters to train
+  # Medical domain often benefits from moderate rank (8-32) due to specialized
+  # terminology requiring more adaptation capacity
+  rank: 16
+  
+  # LoRA alpha scaling parameter
+  # The LoRA output is scaled by alpha divided by rank
+  # Higher alpha gives more weight to LoRA adaptations
+  # Alpha typically set to 2x or 4x the rank
+  alpha: 32
+  
+  # Dropout rate for LoRA layers
+  # Helps prevent overfitting by randomly dropping LoRA outputs during training
+  # Medical datasets are often small, making dropout crucial
+  dropout: 0.1
+  
+  # Bias type for LoRA layers
+  # Options: "none", "all", "lora_only"
+  # "none" is standard for reducing parameters
+  bias: "none"
+  
+  # Whether to merge LoRA weights into base model after training
+  # Merging eliminates LoRA layers and creates a single unified model
+  # Useful for inference efficiency
+  merge_weights: true
+  
+  # Whether to use fan-in scaling for LoRA initialization
+  # Fan-in scaling helps with gradient flow in deep networks
+  fan_in_scaling: true
+  
+  # Initialization method for LoRA weights
+  # "default" uses Kaiming initialization, "xavier" uses Xavier initialization
+  initialization: "default"
+
+# ----------------------------------------------------------------------------
+# TARGET MODULES CONFIGURATION
+# ----------------------------------------------------------------------------
+# Specifies which transformer layers/modules to apply LoRA to
+# Choosing the right modules is critical for performance
+target_modules:
+  # Query projection layers in attention mechanism
+  # LoRA applied here helps adapt how the model attends to different words
+  query:
+    enabled: true
+    # List of layer names containing query projections
+    # These patterns are matched in the model's module names
+    layer_patterns:
+      - "query"
+      - "self_attn.q_proj"
+  
+  # Value projection layers in attention mechanism
+  # Together with query, forms the core of attention adaptation
+  value:
+    enabled: true
+    layer_patterns:
+      - "value"
+      - "self_attn.v_proj"
+  
+  # Key projection layers in attention mechanism
+  # Sometimes included for additional adaptation capacity
+  key:
+    enabled: false
+    layer_patterns:
+      - "key"
+      - "self_attn.k_proj"
+  
+  # Output projection layers after attention
+  # Adapts how attention outputs are projected back to hidden dimension
+  output:
+    enabled: true
+    layer_patterns:
+      - "output"
+      - "self_attn.out_proj"
+  
+  # Feed-forward network intermediate layers
+  # These contain most parameters and benefit from LoRA adaptation
+  intermediate:
+    enabled: true
+    layer_patterns:
+      - "intermediate"
+      - "mlp.intermediate"
+  
+  # Feed-forward network output layers
+  # Projects intermediate representations back to hidden dimension
+  ff_output:
+    enabled: true
+    layer_patterns:
+      - "output.dense"
+      - "mlp.output"
+  
+  # Layer normalization modules
+  # Usually not adapted as they have few parameters
+  layer_norm:
+    enabled: false
+    layer_patterns:
+      - "layer_norm"
+      - "norm"
+  
+  # Embedding layer
+  # Usually not adapted as it has a large number of parameters
+  embedding:
+    enabled: false
+    layer_patterns:
+      - "embed"
+      - "embeddings"
+
+# ----------------------------------------------------------------------------
+# LAYER SELECTION CONFIGURATION
+# ----------------------------------------------------------------------------
+# Controls which layers in the transformer architecture receive LoRA adaptation
+layer_selection:
+  # Strategy for selecting layers to adapt
+  # Options: "all", "last_n", "first_n", "custom"
+  strategy: "all"
+  
+  # Number of layers to adapt if using "last_n" or "first_n"
+  num_layers: 6
+  
+  # Custom layer indices to adapt (0-indexed)
+  # Only used if strategy is "custom"
+  custom_layers:
+    - 0
+    - 1
+    - 2
+    - 9
+    - 10
+    - 11
+  
+  # Whether to adapt attention layers only
+  # This can reduce parameter count while maintaining performance
+  attention_only: false
+  
+  # Whether to adapt feed-forward layers only
+  ff_only: false
+  
+  # Whether to apply different ranks to different layers
+  # Allows deeper layers to have higher capacity for adaptation
+  layer_specific_ranks: false
+  
+  # Rank multipliers for different layer depths
+  # Applied when layer_specific_ranks is true
+  rank_multipliers:
+    early: 0.5    # First 25% of layers
+    middle: 1.0   # Middle 50% of layers
+    late: 1.5     # Last 25% of layers
+
+# ----------------------------------------------------------------------------
+# TASK-SPECIFIC CONFIGURATIONS
+# ----------------------------------------------------------------------------
+# Different medical tasks may benefit from different LoRA configurations
+tasks:
+  # Binary classification tasks (e.g., disease presence prediction)
+  binary_classification:
+    rank: 16
+    alpha: 32
+    dropout: 0.1
+    target_modules: ["query", "value", "output"]
+    use_attention_only: true
+  
+  # Multi-class classification (e.g., diagnosis classification)
+  multi_class_classification:
+    rank: 32
+    alpha: 64
+    dropout: 0.15
+    target_modules: ["query", "value", "output", "intermediate"]
+    use_attention_only: false
+  
+  # Sequence labeling (e.g., named entity recognition for medical terms)
+  sequence_labeling:
+    rank: 24
+    alpha: 48
+    dropout: 0.1
+    target_modules: ["query", "value", "output", "ff_output"]
+    use_all_layers: true
+  
+  # Question answering (e.g., medical question answering)
+  question_answering:
+    rank: 32
+    alpha: 64
+    dropout: 0.1
+    target_modules: ["query", "value", "key", "output"]
+    use_attention_only: true
+  
+  # Text generation (e.g., clinical note summarization)
+  text_generation:
+    rank: 64
+    alpha: 128
+    dropout: 0.05
+    target_modules: ["all"]
+    use_all_layers: true
+  
+  # Regression tasks (e.g., risk score prediction)
+  regression:
+    rank: 16
+    alpha: 32
+    dropout: 0.1
+    target_modules: ["query", "value"]
+    use_attention_only: true
+
+# ----------------------------------------------------------------------------
+# LOADING AND SAVING CONFIGURATION
+# ----------------------------------------------------------------------------
+# Controls how LoRA adapters are loaded and saved
+saving:
+  # Directory to save LoRA adapters
+  adapter_dir: "./lora_adapters"
+  
+  # Whether to save the full model (base + LoRA)
+  # Saves a single model file instead of separate adapter weights
+  save_full_model: false
+  
+  # Whether to save adapter weights only
+  # This is more efficient for sharing and deploying adapters
+  save_adapter_only: true
+  
+  # Format for saving adapters
+  # Options: "pytorch", "safetensors"
+  save_format: "safetensors"
+  
+  # Whether to include configuration in saved file
+  include_config: true
+  
+  # Whether to compress saved adapters
+  compress: false
+  
+  # Whether to save optimizer state for LoRA parameters
+  save_optimizer_state: false
+
+# ----------------------------------------------------------------------------
+# LOADING CONFIGURATION
+# ----------------------------------------------------------------------------
+# Controls how pre-trained LoRA adapters are loaded
+loading:
+  # Path to pre-trained LoRA adapter to load
+  pretrained_adapter_path: null
+  
+  # Whether to strictly match module names when loading
+  strict_loading: true
+  
+  # Whether to resume training from checkpoint
+  resume_training: false
+  
+  # Checkpoint path for resuming
+  resume_checkpoint_path: null
+  
+  # Whether to load adapters for specific tasks only
+  load_specific_tasks: false
+  
+  # Task names to load if load_specific_tasks is true
+  tasks_to_load: null
+
+# ----------------------------------------------------------------------------
+# QUANTIZATION CONFIGURATION FOR LORA
+# ----------------------------------------------------------------------------
+# Settings for quantizing LoRA adapters to reduce memory and speed up inference
+quantization:
+  # Whether to quantize LoRA adapters
+  quantize: false
+  
+  # Quantization method
+  # Options: "int8", "nf4", "fp4"
+  method: "int8"
+  
+  # Whether to quantize only the LoRA weights while keeping base model in FP16
+  quantize_lora_only: true
+  
+  # Bits used for quantization
+  bits: 8
+  
+  # Whether to use double quantization for nf4/fp4
+  double_quantization: false
+  
+  # Quantization type for double quantization
+  double_quantization_type: "nf4"
+  
+  # Whether to use compute dtype (FP16) for faster computation
+  compute_dtype: "fp16"
+
+# ----------------------------------------------------------------------------
+# ADVANCED LORA TECHNIQUES
+# ----------------------------------------------------------------------------
+# Experimental techniques for improving LoRA performance
+advanced:
+  # Whether to use AdaLoRA (Adaptive LoRA)
+  # Dynamically adjusts rank during training based on importance
+  use_adalora: false
+  
+  # Initial rank for AdaLoRA
+  adalora_init_rank: 16
+  
+  # Target rank for AdaLoRA
+  adalora_target_rank: 4
+  
+  # Whether to use DoRA (Weight-Decomposed Low-Rank Adaptation)
+  # Decomposes weights into magnitude and direction components
+  use_dora: false
+  
+  # Whether to use LoRA+ (optimizer with different learning rates for A and B)
+  use_lora_plus: false
+  
+  # Learning rate multiplier for LoRA matrices
+  lora_plus_lr_multiplier: 16.0
+  
+  # Whether to use Layer-wise LoRA
+  # Applies different LoRA configurations per layer based on importance
+  use_layerwise_lora: false
+  
+  # Importance scoring method for layer-wise LoRA
+  # Options: "gradient", "hessian", "random"
+  layer_importance_method: "gradient"
+  
+  # Whether to use QLoRA (Quantized LoRA)
+  # Combines quantization with LoRA for memory efficiency
+  use_qlora: false
+  
+  # QLoRA quantization configuration
+  qlora_config:
+    bits: 4
+    double_quant: true
+    quant_type: "nf4"
+    use_4bit_compute_dtype: true
+
+# ----------------------------------------------------------------------------
+# TRAINING OPTIMIZATIONS FOR LORA
+# ----------------------------------------------------------------------------
+# Optimizations specific to training LoRA adapters
+training_optimizations:
+  # Whether to freeze the base model entirely
+  # LoRA only trains adapter weights, base model remains frozen
+  freeze_base_model: true
+  
+  # Whether to freeze certain layers of the base model
+  freeze_layers:
+    enabled: false
+    layer_names:
+      - "embeddings"
+      - "layer.0"
+      - "layer.1"
+  
+  # Whether to use gradient checkpointing for LoRA layers
+  gradient_checkpointing: true
+  
+  # Whether to use mixed precision training for LoRA
+  use_mixed_precision: true
+  
+  # Mixed precision type
+  mixed_precision_type: "fp16"
+  
+  # Whether to accumulate gradients across multiple batches
+  gradient_accumulation: false
+  
+  # Number of batches for gradient accumulation
+  accumulation_steps: 2
+  
+  # Whether to use parameter efficient fine-tuning with LoRA
+  peft: true
+
+# ----------------------------------------------------------------------------
+# MEMORY OPTIMIZATIONS
+# ----------------------------------------------------------------------------
+# Techniques to reduce memory usage during LoRA training
+memory_optimizations:
+  # Whether to offload optimizer states to CPU
+  offload_optimizer: false
+  
+  # Whether to offload gradients to CPU
+  offload_gradients: false
+  
+  # Whether to use activation checkpointing
+  activation_checkpointing: true
+  
+  # Whether to use CPU for forward pass
+  cpu_forward: false
+  
+  # Whether to clear cache after each step
+  clear_cache_every_step: true
+  
+  # Maximum memory for gradient checkpointing
+  checkpointing_memory_limit_gb: 8
+
+# ----------------------------------------------------------------------------
+# PERFORMANCE MONITORING FOR LORA
+# ----------------------------------------------------------------------------
+# Metrics to track during LoRA training to assess adaptation quality
+monitoring:
+  # Whether to monitor LoRA parameter norms
+  monitor_lora_norms: true
+  
+  # Whether to monitor gradient norms
+  monitor_gradient_norms: true
+  
+  # Whether to monitor rank importance scores
+  monitor_rank_importance: true
+  
+  # Frequency of monitoring (in steps)
+  monitoring_frequency: 100
+  
+  # Whether to log LoRA parameter distributions
+  log_parameter_distributions: false
+  
+  # Whether to compute and log effective rank
+  compute_effective_rank: true
+  
+  # Whether to log singular value distributions
+  log_singular_values: false
+
+# ----------------------------------------------------------------------------
+# EXPERIMENTAL CONFIGURATIONS
+# ----------------------------------------------------------------------------
+# Cutting-edge techniques for pushing LoRA performance
+experimental:
+  # Whether to use MoRA (Mixture of LoRA Adapters)
+  # Combines multiple LoRA adapters for different tasks
+  use_mora: false
+  
+  # Number of LoRA adapters in the mixture
+  num_adapters: 4
+  
+  # Routing method for MoRA
+  # Options: "learned", "gating", "fixed"
+  routing_method: "learned"
+  
+  # Whether to use LoRAHub
+  # Dynamically combines multiple pre-trained adapters
+  use_lorahub: false
+  
+  # Path to LoRAHub adapter repository
+  lorahub_repo_path: "./lorahub_adapters"
+  
+  # Whether to use LAHA (Low-Rank Adaptation with Hierarchical Attention)
+  use_laha: false
+  
+  # Hierarchy depth for LAHA
+  laha_depth: 2
+  
+  # Whether to use LoRA with attention reset
+  # Resets attention weights to improve adaptation
+  use_attention_reset: false
+  
+  # Whether to use evolutionary LoRA
+  # Evolves LoRA structures during training
+  use_evolutionary_lora: false
+  
+  # Population size for evolutionary search
+  evolutionary_population_size: 10
+
+# ----------------------------------------------------------------------------
+# COMPATIBILITY CONFIGURATIONS
+# ----------------------------------------------------------------------------
+# Ensures compatibility with different transformer model architectures
+compatibility:
+  # Model architecture type
+  # Options: "bert", "roberta", "gpt2", "t5", "llama", "auto"
+  model_type: "bert"
+  
+  # Whether to use auto-detect for model architecture
+  auto_detect_model: true
+  
+  # Whether to use legacy LoRA implementation
+  # For compatibility with older codebases
+  use_legacy_implementation: false
+  
+  # Whether to use PyTorch 2.0 compilation
+  use_torch_compile: true
+  
+  # Whether to use flash attention
+  use_flash_attention: true
+  
+  # Whether to use SDPA (Scaled Dot Product Attention)
+  use_sdpa: true
+
+# ----------------------------------------------------------------------------
+# DOCUMENTATION AND METADATA
+# ----------------------------------------------------------------------------
+# Metadata about this LoRA configuration for reproducibility
+metadata:
+  # Configuration version
+  version: "2.0"
+  
+  # Configuration author
+  author: "AegisMedBot Team"
+  
+  # Creation date
+  created: "2026-03-25"
+  
+  # Last modified
+  modified: "2026-03-25"
+  
+  # Description of this configuration
+  description: "Optimized LoRA configuration for medical transformer fine-tuning"
+  
+  # Target domain
+  domain: "medical_clinical_text"
+  
+  # Hardware requirements
+  hardware_requirements:
+    min_gpu_memory_gb: 8
+    recommended_gpu_memory_gb: 16
+    min_ram_gb: 16
+    recommended_ram_gb: 32
+  
+  # Performance expectations
+  performance_expectations:
+    parameter_reduction_percent: 99.8
+    training_speedup_factor: 2.5
+    inference_speedup_factor: 1.8
+    expected_accuracy: 0.92

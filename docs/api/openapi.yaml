@@ -1,0 +1,1246 @@
+# OpenAPI 3.0.0 Specification for AegisMedBot API
+# This file defines the complete REST API contract for the hospital intelligence platform
+# Purpose: Provides machine-readable API documentation for client integration and code generation
+
+openapi: 3.0.0
+info:
+  title: AegisMedBot Hospital Intelligence Platform API
+  description: |
+    # Complete API Reference for AegisMedBot
+    
+    ## Overview
+    This API provides programmatic access to the AegisMedBot multi-agent hospital intelligence system.
+    The platform uses six specialized AI agents working together to provide clinical decision support,
+    operational analytics, risk prediction, and strategic insights for hospital leadership.
+    
+    ## Authentication
+    All endpoints require JWT Bearer token authentication except the health check endpoint.
+    Tokens are obtained through the OAuth2 flow and have a 30-minute expiry.
+    
+    ## Rate Limiting
+    - Standard tier: 100 requests per minute
+    - Enterprise tier: 500 requests per minute
+    - Rate limit headers are included in all responses
+    
+    ## Response Format
+    All responses follow a consistent JSON structure with metadata about the processing agent,
+    confidence scores, and processing time metrics.
+    
+    ## Error Handling
+    Standard HTTP status codes are used:
+    - 200: Success
+    - 400: Bad Request (invalid input)
+    - 401: Unauthorized (invalid or missing token)
+    - 403: Forbidden (insufficient permissions)
+    - 429: Too Many Requests (rate limit exceeded)
+    - 500: Internal Server Error
+    - 503: Service Unavailable (maintenance or overload)
+    
+    ## Agent Response Confidence Levels
+    - High (0.8-1.0): Agent is very confident, no human review needed
+    - Medium (0.6-0.8): Agent is moderately confident, consider human review
+    - Low (0.0-0.6): Agent has low confidence, human review recommended
+    
+  version: 1.0.0
+  contact:
+    name: AegisMedBot Support Team
+    email: support@aegismedbot.com
+    url: https://aegismedbot.com/support
+  license:
+    name: Proprietary - Hospital Use Only
+    url: https://aegismedbot.com/license
+
+servers:
+  - url: https://api.aegismedbot.com/v1
+    description: Production server
+  - url: https://staging-api.aegismedbot.com/v1
+    description: Staging server for testing
+  - url: http://localhost:8000/api/v1
+    description: Local development server
+
+tags:
+  - name: Chat
+    description: |
+      Primary interaction endpoints for conversing with AI agents.
+      These endpoints handle natural language queries and route them to appropriate agents.
+      Supports both synchronous and streaming (WebSocket) communication.
+  
+  - name: Patients
+    description: |
+      Patient data management endpoints.
+      Access to structured patient records, vital signs, lab results, and admission history.
+      All PHI is automatically redacted in logs and audit trails.
+  
+  - name: Agents
+    description: |
+      Agent management and monitoring endpoints.
+      View agent status, performance metrics, and configure agent behaviors.
+      Requires administrative privileges.
+  
+  - name: Admin
+    description: |
+      Administrative endpoints for system management.
+      User management, audit log access, and system configuration.
+      Restricted to users with admin role.
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        JWT token obtained from authentication endpoint.
+        Token contains user role, permissions, and expiry time.
+        Example: Authorization: Bearer eyJhbGciOiJIUzI1NiIs...
+
+  schemas:
+    # Core Data Models
+    
+    ChatRequest:
+      type: object
+      required:
+        - query
+      properties:
+        query:
+          type: string
+          minLength: 1
+          maxLength: 5000
+          description: |
+            The user's natural language query to the AI assistant.
+            Can be clinical questions, operational queries, or administrative requests.
+            Example: "What are the latest guidelines for sepsis management?"
+          example: "Show me current ICU bed occupancy and predict tomorrow's demand"
+        
+        conversation_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: |
+            Unique identifier for the conversation session.
+            If not provided, a new conversation is created.
+            Use this to maintain context across multiple queries.
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        
+        patient_id:
+          type: string
+          nullable: true
+          description: |
+            Patient medical record number for patient-specific queries.
+            When provided, the agent automatically loads patient context.
+            Example: "MRN-2024-001234"
+          example: "MRN-2024-005678"
+        
+        metadata:
+          type: object
+          additionalProperties: true
+          description: |
+            Additional context for the agent.
+            Can include department, user role, preferred agent, etc.
+          example:
+            department: "Emergency Department"
+            user_role: "attending_physician"
+            priority: "high"
+    
+    ChatResponse:
+      type: object
+      properties:
+        conversation_id:
+          type: string
+          format: uuid
+          description: "Unique identifier for this conversation session"
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        
+        response:
+          type: string
+          description: |
+            The AI assistant's natural language response.
+            May include markdown formatting, bullet points, and structured data.
+            Clinical responses include evidence sources and confidence indicators.
+          example: "Based on current hospital data, ICU bed occupancy is at 85 percent with 12 of 80 beds available. Predictions for tomorrow indicate peak occupancy around 2 PM with estimated 90 percent utilization. Consider activating overflow protocols."
+        
+        agent:
+          type: string
+          enum:
+            - clinical_agent
+            - risk_agent
+            - operations_agent
+            - director_agent
+            - research_agent
+            - compliance_agent
+            - human_escalation
+          description: "Which agent processed this request"
+          example: "operations_agent"
+        
+        confidence:
+          type: number
+          minimum: 0
+          maximum: 1
+          description: |
+            Agent's confidence in the response.
+            0.0 = no confidence, 1.0 = absolute certainty.
+            Below 0.7 indicates human review recommended.
+          example: 0.92
+        
+        requires_human:
+          type: boolean
+          description: |
+            Whether this response requires human clinician review.
+            True for critical decisions or low confidence responses.
+          example: false
+        
+        processing_time_ms:
+          type: number
+          description: "Total processing time in milliseconds including agent routing and LLM inference"
+          example: 1250.5
+        
+        suggestions:
+          type: array
+          items:
+            type: string
+          description: "Follow-up questions or actions suggested by the agent"
+          example:
+            - "Would you like to see bed availability by department?"
+            - "Generate report of current occupancy trends"
+            - "Alert bed management team about predicted surge"
+        
+        sources:
+          type: array
+          items:
+            $ref: '#/components/schemas/Source'
+          description: "Evidence sources used to generate the response"
+    
+    Source:
+      type: object
+      properties:
+        title:
+          type: string
+          description: "Title or name of the source"
+          example: "Sepsis Management Guidelines 2024"
+        
+        source_type:
+          type: string
+          enum: [clinical_guideline, research_paper, hospital_protocol, internal_data, external_api]
+          description: "Type of source material"
+          example: "clinical_guideline"
+        
+        url:
+          type: string
+          format: uri
+          nullable: true
+          description: "URL to the source if publicly available"
+          example: "https://guidelines.gov/sepsis-2024"
+        
+        relevance_score:
+          type: number
+          minimum: 0
+          maximum: 1
+          description: "How relevant this source is to the query"
+          example: 0.87
+    
+    # Patient Management Models
+    
+    Patient:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: "Internal unique identifier"
+          example: "123e4567-e89b-12d3-a456-426614174000"
+        
+        mrn:
+          type: string
+          description: "Medical Record Number - hospital-wide unique identifier"
+          example: "MRN-2024-00123456"
+        
+        first_name:
+          type: string
+          description: "Patient's first name"
+          example: "John"
+        
+        last_name:
+          type: string
+          description: "Patient's last name"
+          example: "Smith"
+        
+        date_of_birth:
+          type: string
+          format: date
+          description: "Patient's date of birth in YYYY-MM-DD format"
+          example: "1965-03-15"
+        
+        gender:
+          type: string
+          enum: [M, F, O, U]
+          description: "M=Male, F=Female, O=Other, U=Unknown"
+          example: "M"
+        
+        blood_type:
+          type: string
+          nullable: true
+          enum: [A+, A-, B+, B-, AB+, AB-, O+, O-]
+          description: "Patient's blood type if known"
+          example: "O+"
+        
+        allergies:
+          type: array
+          items:
+            type: string
+          description: "List of known allergies"
+          example: ["Penicillin", "Sulfa drugs", "Latex"]
+        
+        chronic_conditions:
+          type: array
+          items:
+            type: string
+          description: "Chronic medical conditions using ICD-10 codes"
+          example: ["I10 - Hypertension", "E11.9 - Type 2 Diabetes"]
+        
+        emergency_contact:
+          type: object
+          properties:
+            name:
+              type: string
+              example: "Jane Smith"
+            relationship:
+              type: string
+              example: "Spouse"
+            phone:
+              type: string
+              example: "+1-555-123-4567"
+        
+        is_active:
+          type: boolean
+          description: "Whether patient is currently active in the system"
+          example: true
+        
+        created_at:
+          type: string
+          format: date-time
+          description: "ISO 8601 timestamp of record creation"
+          example: "2024-01-15T10:30:00Z"
+    
+    Admission:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: "Unique admission identifier"
+        
+        patient_id:
+          type: string
+          format: uuid
+          description: "Reference to patient record"
+        
+        admission_date:
+          type: string
+          format: date-time
+          description: "Date and time of admission"
+        
+        discharge_date:
+          type: string
+          format: date-time
+          nullable: true
+          description: "Date and time of discharge (null if still admitted)"
+        
+        admission_type:
+          type: string
+          enum: [Emergency, Elective, Urgent, Trauma]
+          description: "Type of admission"
+        
+        department:
+          type: string
+          description: "Admitting department"
+          example: "Emergency Department"
+        
+        room_number:
+          type: string
+          nullable: true
+          description: "Current room assignment"
+          example: "301-B"
+        
+        diagnosis:
+          type: array
+          items:
+            type: string
+          description: "Primary and secondary diagnoses"
+          example: ["J15.0 - Pneumonia", "I10 - Hypertension"]
+        
+        attending_physician:
+          type: string
+          description: "Name of attending physician"
+          example: "Dr. Sarah Johnson"
+        
+        status:
+          type: string
+          enum: [Active, Discharged, Transferred, Deceased]
+          description: "Current admission status"
+    
+    VitalSigns:
+      type: object
+      properties:
+        patient_id:
+          type: string
+          format: uuid
+          description: "Patient identifier"
+        
+        timestamp:
+          type: string
+          format: date-time
+          description: "When vitals were measured"
+        
+        heart_rate:
+          type: integer
+          minimum: 0
+          maximum: 300
+          nullable: true
+          description: "Beats per minute"
+          example: 72
+        
+        systolic_bp:
+          type: integer
+          minimum: 0
+          maximum: 300
+          nullable: true
+          description: "Systolic blood pressure in mmHg"
+          example: 120
+        
+        diastolic_bp:
+          type: integer
+          minimum: 0
+          maximum: 200
+          nullable: true
+          description: "Diastolic blood pressure in mmHg"
+          example: 80
+        
+        respiratory_rate:
+          type: integer
+          minimum: 0
+          maximum: 100
+          nullable: true
+          description: "Breaths per minute"
+          example: 16
+        
+        temperature:
+          type: number
+          minimum: 25
+          maximum: 45
+          nullable: true
+          description: "Body temperature in degrees Celsius"
+          example: 37.0
+        
+        oxygen_saturation:
+          type: integer
+          minimum: 0
+          maximum: 100
+          nullable: true
+          description: "Peripheral capillary oxygen saturation percentage"
+          example: 98
+        
+        pain_level:
+          type: integer
+          minimum: 0
+          maximum: 10
+          nullable: true
+          description: "Patient-reported pain scale 0-10"
+          example: 2
+    
+    # Agent Management Models
+    
+    AgentStatus:
+      type: object
+      properties:
+        agent_name:
+          type: string
+          description: "Name of the agent"
+          example: "clinical_agent"
+        
+        status:
+          type: string
+          enum: [idle, processing, waiting_for_human, error, completed]
+          description: "Current operational status"
+        
+        current_task:
+          type: string
+          nullable: true
+          description: "ID of task currently being processed"
+        
+        tasks_completed_today:
+          type: integer
+          description: "Number of tasks completed in last 24 hours"
+          example: 145
+        
+        average_response_time_ms:
+          type: number
+          description: "Average processing time over last 100 requests"
+          example: 850.3
+        
+        error_rate:
+          type: number
+          minimum: 0
+          maximum: 1
+          description: "Proportion of requests that resulted in errors"
+          example: 0.02
+    
+    # Error Response Models
+    
+    ErrorResponse:
+      type: object
+      required:
+        - error
+        - status_code
+        - timestamp
+      properties:
+        error:
+          type: string
+          description: "Human-readable error message"
+          example: "Invalid patient ID format"
+        
+        status_code:
+          type: integer
+          description: "HTTP status code"
+          example: 400
+        
+        detail:
+          type: string
+          nullable: true
+          description: "Additional error details for debugging"
+          example: "Patient ID must be in UUID format"
+        
+        timestamp:
+          type: string
+          format: date-time
+          description: "When the error occurred"
+          example: "2024-01-15T14:30:00Z"
+        
+        request_id:
+          type: string
+          description: "Unique identifier for the failed request for tracking"
+          example: "req_123abc456def"
+
+# API Endpoints Definition
+
+paths:
+  # Health Check Endpoint
+  /health:
+    get:
+      summary: "Health check endpoint"
+      description: |
+        Returns the health status of all system components.
+        Used by Kubernetes for liveness and readiness probes.
+        No authentication required.
+      tags:
+        - System
+      responses:
+        '200':
+          description: "System is healthy"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum: [healthy, degraded, unhealthy]
+                    example: "healthy"
+                  timestamp:
+                    type: string
+                    format: date-time
+                  components:
+                    type: object
+                    properties:
+                      database:
+                        type: string
+                        example: "connected"
+                      redis:
+                        type: string
+                        example: "connected"
+                      qdrant:
+                        type: string
+                        example: "connected"
+                      agents:
+                        type: string
+                        example: "all_operational"
+        '503':
+          description: "Service unavailable"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  # Chat Endpoints
+  /chat:
+    post:
+      summary: "Send a message to the AI assistant"
+      description: |
+        Process a natural language query through the agentic system.
+        The orchestrator automatically routes to the most appropriate agent based on intent detection.
+        Returns comprehensive response with confidence scores and evidence sources.
+      tags:
+        - Chat
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChatRequest'
+            examples:
+              clinical_query:
+                summary: "Clinical decision support query"
+                value:
+                  query: "What are the contraindications for metformin in elderly patients with renal impairment?"
+                  metadata:
+                    department: "Geriatrics"
+                    priority: "high"
+              
+              operations_query:
+                summary: "Hospital operations query"
+                value:
+                  query: "Predict ER wait times for the next 6 hours based on current patient volume and staffing"
+                  metadata:
+                    department: "Emergency Department"
+              
+              director_query:
+                summary: "Strategic query for medical director"
+                value:
+                  query: "Generate weekly report on ICU mortality rates compared to regional benchmarks"
+                  metadata:
+                    user_role: "medical_director"
+                    report_format: "detailed"
+      responses:
+        '200':
+          description: "Successful response"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatResponse'
+              example:
+                conversation_id: "550e8400-e29b-41d4-a716-446655440000"
+                response: "Based on current ER data with 45 patients waiting and 8 attending physicians on duty, predicted wait times are: non-urgent 45-60 minutes, urgent 15-25 minutes, emergent immediate. Staffing optimization recommended for 8 PM to midnight shift."
+                agent: "operations_agent"
+                confidence: 0.89
+                requires_human: false
+                processing_time_ms: 1340.2
+                suggestions:
+                  - "Show real-time ER dashboard"
+                  - "Alert charge nurse about predicted surge"
+                  - "Compare with historical wait times"
+                sources:
+                  - title: "ER Operational Data"
+                    source_type: "internal_data"
+                    relevance_score: 0.95
+        '400':
+          description: "Bad request - invalid input"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: "Unauthorized - missing or invalid token"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: "Rate limit exceeded"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  # WebSocket Chat Endpoint
+  /chat/ws:
+    get:
+      summary: "WebSocket connection for streaming chat"
+      description: |
+        Establish a WebSocket connection for real-time streaming responses.
+        Messages are sent as JSON and responses stream back in chunks.
+        Required query parameters: token (JWT), optional conversation_id.
+      tags:
+        - Chat
+      parameters:
+        - name: token
+          in: query
+          required: true
+          schema:
+            type: string
+          description: "JWT authentication token"
+        - name: conversation_id
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+          description: "Existing conversation ID to continue"
+      responses:
+        '101':
+          description: "WebSocket connection upgraded"
+        '400':
+          description: "Bad request - missing token"
+        '401':
+          description: "Unauthorized - invalid token"
+
+  # Patient Management Endpoints
+  /patients:
+    get:
+      summary: "List patients with optional filtering"
+      description: |
+        Retrieve a paginated list of patients.
+        Supports filtering by MRN, name, active status, and date range.
+      tags:
+        - Patients
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+          description: "Page number for pagination"
+        - name: page_size
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+          description: "Number of records per page"
+        - name: mrn
+          in: query
+          schema:
+            type: string
+          description: "Filter by medical record number"
+        - name: last_name
+          in: query
+          schema:
+            type: string
+          description: "Filter by last name (partial match)"
+        - name: is_active
+          in: query
+          schema:
+            type: boolean
+          description: "Filter by active status"
+      responses:
+        '200':
+          description: "List of patients"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total:
+                    type: integer
+                    description: "Total number of matching patients"
+                  page:
+                    type: integer
+                  page_size:
+                    type: integer
+                  patients:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Patient'
+        '401':
+          description: "Unauthorized"
+        '403':
+          description: "Forbidden - insufficient permissions"
+
+    post:
+      summary: "Create a new patient record"
+      description: |
+        Add a new patient to the system.
+        Required fields: first_name, last_name, date_of_birth.
+        MRN is auto-generated if not provided.
+      tags:
+        - Patients
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - first_name
+                - last_name
+                - date_of_birth
+              properties:
+                first_name:
+                  type: string
+                last_name:
+                  type: string
+                date_of_birth:
+                  type: string
+                  format: date
+                gender:
+                  type: string
+                  enum: [M, F, O, U]
+                blood_type:
+                  type: string
+                allergies:
+                  type: array
+                  items:
+                    type: string
+                chronic_conditions:
+                  type: array
+                  items:
+                    type: string
+                emergency_contact:
+                  type: object
+      responses:
+        '201':
+          description: "Patient created successfully"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Patient'
+        '400':
+          description: "Invalid input"
+        '409':
+          description: "Patient with same MRN already exists"
+
+  /patients/{patient_id}:
+    get:
+      summary: "Get patient by ID"
+      description: "Retrieve complete patient record including medical history"
+      tags:
+        - Patients
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: patient_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: "Patient UUID"
+      responses:
+        '200':
+          description: "Patient record"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Patient'
+        '404':
+          description: "Patient not found"
+
+    put:
+      summary: "Update patient record"
+      description: "Update patient information. Partial updates supported."
+      tags:
+        - Patients
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: patient_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                first_name:
+                  type: string
+                last_name:
+                  type: string
+                allergies:
+                  type: array
+                chronic_conditions:
+                  type: array
+                emergency_contact:
+                  type: object
+      responses:
+        '200':
+          description: "Patient updated"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Patient'
+        '404':
+          description: "Patient not found"
+
+  /patients/{patient_id}/vitals:
+    get:
+      summary: "Get patient vital signs"
+      description: "Retrieve vital signs history for a patient with optional date range"
+      tags:
+        - Patients
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: patient_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: start_date
+          in: query
+          schema:
+            type: string
+            format: date
+          description: "Start date for filtering (YYYY-MM-DD)"
+        - name: end_date
+          in: query
+          schema:
+            type: string
+            format: date
+          description: "End date for filtering (YYYY-MM-DD)"
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            maximum: 1000
+            default: 100
+      responses:
+        '200':
+          description: "Vital signs history"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  patient_id:
+                    type: string
+                  vitals:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/VitalSigns'
+        '404':
+          description: "Patient not found"
+
+  /patients/{patient_id}/risk-score:
+    get:
+      summary: "Get patient risk predictions"
+      description: |
+        Calculate risk scores for the patient using ML models.
+        Returns probabilities for various adverse outcomes.
+      tags:
+        - Patients
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: patient_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: "Risk assessment results"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  patient_id:
+                    type: string
+                  mortality_risk:
+                    type: number
+                    minimum: 0
+                    maximum: 1
+                    description: "30-day mortality risk probability"
+                  readmission_risk:
+                    type: number
+                    minimum: 0
+                    maximum: 1
+                    description: "30-day readmission risk probability"
+                  complication_risk:
+                    type: number
+                    minimum: 0
+                    maximum: 1
+                    description: "Post-discharge complication risk"
+                  icu_transfer_risk:
+                    type: number
+                    minimum: 0
+                    maximum: 1
+                    description: "Risk of ICU transfer within 48 hours"
+                  contributing_factors:
+                    type: array
+                    items:
+                      type: string
+                    description: "Factors contributing to elevated risk"
+                  model_version:
+                    type: string
+                    description: "ML model version used for prediction"
+        '404':
+          description: "Patient not found"
+
+  # Agent Management Endpoints
+  /agents:
+    get:
+      summary: "List all agents and their status"
+      description: "Get real-time status of all AI agents in the system"
+      tags:
+        - Agents
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: "Agent statuses"
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties:
+                  $ref: '#/components/schemas/AgentStatus'
+              example:
+                clinical_agent:
+                  agent_name: "clinical_agent"
+                  status: "idle"
+                  current_task: null
+                  tasks_completed_today: 342
+                  average_response_time_ms: 890.5
+                  error_rate: 0.01
+                risk_agent:
+                  agent_name: "risk_agent"
+                  status: "processing"
+                  current_task: "risk_calculation_789"
+                  tasks_completed_today: 156
+                  average_response_time_ms: 450.2
+                  error_rate: 0.005
+
+  /agents/{agent_name}/metrics:
+    get:
+      summary: "Get detailed metrics for a specific agent"
+      description: "Retrieve performance metrics, latency distributions, and error rates"
+      tags:
+        - Agents
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: agent_name
+          in: path
+          required: true
+          schema:
+            type: string
+            enum:
+              - clinical_agent
+              - risk_agent
+              - operations_agent
+              - director_agent
+              - research_agent
+              - compliance_agent
+      responses:
+        '200':
+          description: "Agent metrics"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  agent_name:
+                    type: string
+                  uptime_seconds:
+                    type: number
+                  total_requests:
+                    type: integer
+                  requests_per_minute:
+                    type: number
+                  latency_percentiles:
+                    type: object
+                    properties:
+                      p50:
+                        type: number
+                      p95:
+                        type: number
+                      p99:
+                        type: number
+                  error_types:
+                    type: object
+                    additionalProperties:
+                      type: integer
+                  confidence_distribution:
+                    type: object
+                    properties:
+                      high:
+                        type: integer
+                      medium:
+                        type: integer
+                      low:
+                        type: integer
+
+  # Administrative Endpoints
+  /admin/audit-logs:
+    get:
+      summary: "Retrieve system audit logs"
+      description: |
+        Access audit trail of all system actions.
+        Includes user queries, agent responses, data access, and configuration changes.
+        Restricted to users with admin role.
+      tags:
+        - Admin
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: start_time
+          in: query
+          schema:
+            type: string
+            format: date-time
+          description: "ISO 8601 timestamp for start of range"
+        - name: end_time
+          in: query
+          schema:
+            type: string
+            format: date-time
+          description: "ISO 8601 timestamp for end of range"
+        - name: user_id
+          in: query
+          schema:
+            type: string
+          description: "Filter by user ID"
+        - name: action_type
+          in: query
+          schema:
+            type: string
+            enum: [chat_query, patient_access, configuration_change, agent_decision]
+          description: "Filter by action type"
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            maximum: 10000
+            default: 1000
+      responses:
+        '200':
+          description: "Audit logs"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total:
+                    type: integer
+                  logs:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        timestamp:
+                          type: string
+                          format: date-time
+                        user_id:
+                          type: string
+                        user_role:
+                          type: string
+                        action:
+                          type: string
+                        details:
+                          type: object
+                        ip_address:
+                          type: string
+                        request_id:
+                          type: string
+        '403':
+          description: "Forbidden - admin access required"
+
+  /admin/system/config:
+    get:
+      summary: "Get current system configuration"
+      description: "Retrieve all configurable system parameters"
+      tags:
+        - Admin
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: "System configuration"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  agent_config:
+                    type: object
+                    description: "Agent-specific configuration"
+                  model_config:
+                    type: object
+                    description: "ML model parameters"
+                  security_config:
+                    type: object
+                    description: "Security and compliance settings"
+                  rate_limits:
+                    type: object
+                    description: "API rate limiting configuration"
+    
+    put:
+      summary: "Update system configuration"
+      description: "Modify system parameters. Changes take effect immediately."
+      tags:
+        - Admin
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                agent_config:
+                  type: object
+                model_config:
+                  type: object
+                security_config:
+                  type: object
+      responses:
+        '200':
+          description: "Configuration updated"
+        '400':
+          description: "Invalid configuration"
+        '403':
+          description: "Forbidden - admin access required"
+
+  /admin/users:
+    get:
+      summary: "List system users"
+      description: "Retrieve all users with their roles and permissions"
+      tags:
+        - Admin
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: "User list"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  users:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        username:
+                          type: string
+                        email:
+                          type: string
+                        role:
+                          type: string
+                          enum: [admin, medical_director, physician, nurse, researcher, auditor]
+                        created_at:
+                          type: string
+                          format: date-time
+                        last_active:
+                          type: string
+                          format: date-time
+        '403':
+          description: "Forbidden - admin access required"

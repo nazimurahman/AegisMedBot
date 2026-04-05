@@ -1,0 +1,26 @@
+# Service for RAG system access
+
+apiVersion: v1
+kind: Service
+
+metadata:
+  name: rag-service
+  namespace: medintel
+  labels:
+    app: aegismedbot
+    component: rag
+    tier: ai-layer
+
+spec:
+  selector:
+    app: aegismedbot
+    component: rag
+    tier: ai-layer
+  
+  ports:
+  - port: 8002
+    targetPort: 8002
+    protocol: TCP
+    name: http
+  
+  type: ClusterIP

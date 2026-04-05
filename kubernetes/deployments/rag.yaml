@@ -1,0 +1,182 @@
+# RAG (Retrieval-Augmented Generation) service
+# Handles document retrieval and embedding generation
+
+apiVersion: apps/v1
+kind: Deployment
+
+metadata:
+  name: rag
+  namespace: medintel
+  labels:
+    app: aegismedbot
+    component: rag
+    tier: ai-layer
+
+spec:
+  replicas: 2
+  # Scale for handling retrieval requests
+  
+  selector:
+    matchLabels:
+      app: aegismedbot
+      component: rag
+      tier: ai-layer
+  
+  template:
+    metadata:
+      labels:
+        app: aegismedbot
+        component: rag
+        tier: ai-layer
+      
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8002"
+        prometheus.io/path: "/metrics"
+    
+    spec:
+      containers:
+      - name: rag-service
+        image: aegismedbot/rag:latest
+        # Custom RAG service image
+        
+        imagePullPolicy: Always
+        
+        ports:
+        - containerPort: 8002
+          name: http
+          protocol: TCP
+        
+        env:
+        # Database connections
+        - name: QDRANT_HOST
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: QDRANT_HOST
+        
+        - name: QDRANT_PORT
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: QDRANT_PORT
+        
+        - name: QDRANT_COLLECTION
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: QDRANT_COLLECTION
+        
+        - name: EMBEDDING_MODEL
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: TRANSFORMER_MODEL
+        
+        - name: MAX_SEQUENCE_LENGTH
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: MAX_SEQUENCE_LENGTH
+        
+        - name: TOP_K_RETRIEVAL
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: TOP_K_RETRIEVAL
+        
+        - name: CHUNK_SIZE
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: CHUNK_SIZE
+        
+        - name: CHUNK_OVERLAP
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: CHUNK_OVERLAP
+        
+        - name: SIMILARITY_THRESHOLD
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: SIMILARITY_THRESHOLD
+        
+        - name: REDIS_HOST
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: REDIS_HOST
+        
+        - name: REDIS_PORT
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: REDIS_PORT
+        
+        - name: REDIS_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: db-secrets
+              key: redis_password
+        
+        # RAG specific configuration
+        - name: RAG_BATCH_SIZE
+          value: "16"
+        
+        - name: RAG_CACHE_TTL
+          value: "3600"
+        
+        - name: ENABLE_HYBRID_SEARCH
+          value: "true"
+        
+        resources:
+          requests:
+            memory: "2Gi"
+            cpu: "1"
+          limits:
+            memory: "4Gi"
+            cpu: "2"
+        
+        volumeMounts:
+        - name: model-cache
+          mountPath: /app/model_cache
+          # Cache for pre-trained models
+        
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8002
+          initialDelaySeconds: 60
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8002
+          initialDelaySeconds: 30
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+      
+      volumes:
+      - name: model-cache
+        persistentVolumeClaim:
+          claimName: model-cache-pvc
+          # Shared cache for models across replicas
+      
+      # Node affinity for GPU availability
+      affinity:
+        podAntiAffinity:
+          # Distribute RAG pods across different nodes
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchLabels:
+                  app: aegismedbot
+                  component: rag
+              topologyKey: kubernetes.io/hostname

@@ -1,0 +1,548 @@
+================================================================================
+AEGISMEDBOT DATA FLOW ARCHITECTURE
+================================================================================
+
+This document provides a comprehensive explanation of how data moves through
+the AegisMedBot platform, from user input to final response and through all
+intermediate processing stages.
+
+================================================================================
+DATA FLOW FUNDAMENTALS
+================================================================================
+
+Understanding data flow is essential for debugging, optimization, and security
+compliance. The AegisMedBot platform processes sensitive medical information,
+so every data movement must be tracked and audited.
+
+Core Data Flow Principles:
+
+Principle of Explicit Routing
+Every piece of data knows its source and destination. No data is broadcast
+indiscriminately. Each agent receives only the data it needs to perform its
+function.
+
+Principle of Minimal Data Transfer
+Only necessary data moves between services. Large datasets like patient
+histories are referenced by ID rather than copied. The actual data remains
+in the database and agents query it on demand.
+
+Principle of Complete Auditability
+Every data access is logged. The audit log records what data was accessed,
+by whom, when, and for what purpose. This satisfies regulatory requirements
+and enables security investigations.
+
+Principle of Encryption in Transit and at Rest
+Data is encrypted when stored in databases and when transmitted between
+services. TLS 1.3 encrypts all network traffic. AES 256 encrypts all
+persistent storage.
+
+================================================================================
+REQUEST DATA FLOW
+================================================================================
+
+The complete path of a user request through the system follows a well defined
+sequence of stages.
+
+Stage One: Client to Gateway
+The user types a question into the Gradio chat interface. The frontend
+application creates an HTTP POST request to the API endpoint. The request
+body is a JSON object containing the query string, optional conversation ID,
+optional patient ID, and metadata about the user session.
+
+The request is encrypted with TLS before leaving the browser. It travels
+over the internet or hospital network to the gateway load balancer.
+
+Stage Two: Gateway Processing
+The Nginx gateway receives the encrypted request and terminates the TLS
+connection. It validates that the request is well formed and within size
+limits. It extracts the JWT token from the Authorization header.
+
+Nginx calls an internal authentication service to validate the token.
+The authentication service checks that the token is not expired, that it
+was signed by the trusted authority, and that it contains the required
+claims. It returns the user identity and roles.
+
+With authentication complete, Nginx applies rate limiting. It checks how
+many requests this user has made in the current time window. If the limit
+is exceeded, Nginx returns a 429 Too Many Requests response.
+
+If all checks pass, Nginx forwards the request to the backend service.
+It adds headers for the authenticated user ID and roles before forwarding.
+
+Stage Three: Backend API Processing
+The FastAPI backend receives the request. The authentication middleware
+extracts the user ID and roles from the headers added by Nginx. It attaches
+this information to the request state for use by downstream handlers.
+
+The request hits the chat endpoint handler. This handler validates the
+request body using the Pydantic ChatRequest model. It checks that the query
+is not empty and does not exceed the maximum length of 5000 characters.
+
+The handler then calls the get_orchestrator dependency to obtain the agent
+orchestrator instance. The orchestrator is a singleton that manages all
+agents and their interactions.
+
+The handler calls the audit service to log the incoming request. The audit
+log records the user ID, timestamp, conversation ID if provided, and the
+query text after PHI redaction. The raw query with PHI is never logged.
+
+Stage Four: Orchestrator Processing
+The orchestrator's process_message method receives the request. It first
+extracts or creates conversation context. If a conversation ID was provided,
+it retrieves that context from Redis. If not, it creates a new conversation
+with a fresh ID.
+
+The context retrieval reads from Redis using the key pattern
+context:conversation_id. Redis returns a JSON string which is parsed into
+a Python dictionary. The dictionary contains the message history, patient
+context if any, and metadata.
+
+The orchestrator converts the request dictionary into an AgentMessage object.
+This conversion standardizes the format for internal processing. The message
+gets a new unique ID and the current timestamp.
+
+The orchestrator then calls the task delegator to select an agent. The
+delegator analyzes the query and returns the best agent name and confidence
+score. This decision is logged for debugging.
+
+If confidence is below 0.7, the orchestrator escalates to human. It creates
+an escalation record in the database and returns a response indicating that
+human review is needed. The user is told a clinician will respond shortly.
+
+If confidence is acceptable, the orchestrator routes the message to the
+selected agent by calling the agent's process method.
+
+Stage Five: Agent Processing
+The selected agent receives the AgentMessage and begins processing. The
+agent first updates its status to PROCESSING and stores the message ID
+as its current task.
+
+The agent classifies the query type by checking for keywords. For the
+clinical agent, it checks for drug names, disease names, or guideline
+keywords. For the risk agent, it looks for risk related terms.
+
+Based on the classification, the agent calls appropriate tools. For a
+clinical query about drug interactions, it calls the DrugInteractionChecker
+tool. For a guideline query, it calls the MedicalRetriever.
+
+The tools themselves make additional data requests. The DrugInteractionChecker
+queries a drug database REST API. The MedicalRetriever queries the Qdrant
+vector database for relevant documents.
+
+Each tool call is logged with its input parameters and output results.
+This logging enables debugging and performance analysis.
+
+After gathering tool results, the agent constructs a response. It uses
+a transformer model to generate natural language text that synthesizes
+the tool outputs. The model receives the user query and the retrieved
+documents as context.
+
+The agent computes a confidence score for the response. This score is
+based on the relevance of retrieved documents, the consistency of
+information across sources, and the model's internal confidence.
+
+The agent returns an AgentResponse object containing the generated text,
+tool results, confidence score, and any flags for human confirmation.
+
+Stage Six: Orchestrator Response Handling
+The orchestrator receives the AgentResponse. It updates the conversation
+context with the response, appending it to the message history. If the
+response requires human confirmation, the orchestrator creates a pending
+approval record.
+
+The orchestrator converts the AgentResponse to a JSON serializable dictionary.
+It adds the conversation ID and processing time metrics. It then returns
+this dictionary to the API handler.
+
+Stage Seven: API Response Delivery
+The API handler receives the orchestrator response dictionary. It constructs
+a ChatResponse Pydantic model, validating that all required fields are present.
+It calculates the total processing time from request receipt to response.
+
+The audit service logs the response, recording the agent used, confidence
+score, and processing time. The raw response text is redacted of PHI before
+logging.
+
+FastAPI serializes the ChatResponse to JSON and returns it as an HTTP response
+with status code 200. The response travels back through the gateway to the
+client.
+
+Stage Eight: Client Rendering
+The Gradio frontend receives the JSON response. It extracts the response
+text, agent name, confidence score, and any suggestions. It renders these
+in the chat interface.
+
+If the response includes sources, the frontend displays them as clickable
+links. If human confirmation is required, it shows a pending status and
+notifies the user that a clinician will review.
+
+The conversation ID from the response is stored in the frontend state and
+sent with subsequent requests to maintain continuity.
+
+================================================================================
+DATABASE DATA FLOW
+================================================================================
+
+Data flows between services and databases through several patterns.
+
+Patient Data Flow from EHR
+The system integrates with the hospital electronic health record system
+through FHIR Application Programming Interfaces. The FHIR client periodically
+pulls new patient data.
+
+For real time queries, the system queries the EHR on demand. When a doctor
+asks about a specific patient, the Clinical Agent calls the FHIR API to fetch
+current vitals, labs, and medications.
+
+The fetched data is stored in the local PostgreSQL database for caching.
+The cache has a time to live of 15 minutes. Within that window, subsequent
+queries for the same patient read from the cache rather than the EHR.
+
+This caching reduces load on the EHR system and improves response times.
+The cache is invalidated when the EHR sends a webhook notification of
+updated data.
+
+Vector Database Population Flow
+The knowledge base documents flow through an ingestion pipeline into Qdrant.
+
+Documents are collected from multiple sources. Medical literature comes from
+PubMed API queries. Clinical guidelines come from specialty society websites.
+Hospital policies come from internal document repositories.
+
+Each document is processed by the document indexer. The indexer extracts
+text, removes headers and footers, and splits into chunks. Chunk size is
+1000 characters with 200 character overlap between chunks.
+
+Each chunk is passed to the embedding model. The model converts the text
+to a 768 dimensional vector. The vector captures the semantic meaning of
+the chunk.
+
+The vector and the original text are stored in Qdrant as a point. The point
+includes metadata about the source document, chunk position, and document type.
+
+This ingestion pipeline runs as a background job. New documents are processed
+within minutes of being added to the source system.
+
+Conversation State Flow
+Conversation state flows between the orchestrator and Redis for each
+interaction.
+
+When a conversation starts, the context manager creates a new Redis key.
+The key is conversation_id and the value is a JSON object with the
+conversation structure.
+
+As messages are exchanged, the orchestrator updates the Redis value.
+It appends each message to the history list. It updates the last_updated
+timestamp.
+
+Redis expires keys after one hour of inactivity. If the user returns within
+that hour, the conversation continues seamlessly. After an hour, a new
+conversation starts and the old one is permanently deleted.
+
+This design balances continuity with privacy. Conversations persist long
+enough for typical interactions but do not accumulate indefinitely.
+
+================================================================================
+MODEL INFERENCE DATA FLOW
+================================================================================
+
+Transformer model inference involves multiple data transformations.
+
+Input Preparation
+The user query first undergoes tokenization. The tokenizer converts the
+text string into a sequence of integer token IDs. Each token represents
+a word or subword unit.
+
+The tokenizer also generates an attention mask. The mask has value 1 for
+real tokens and 0 for padding tokens. This tells the model which positions
+to pay attention to.
+
+For retrieval augmented generation, the input includes retrieved documents.
+The documents are concatenated with the query, separated by special separator
+tokens. The total length is limited to 512 tokens.
+
+The prepared input is a dictionary with input_ids and attention_mask keys.
+Each value is a PyTorch tensor of shape batch size by sequence length.
+
+Model Forward Pass
+The input tensors are moved to the GPU if available. The model receives
+the tensors and performs the forward pass.
+
+The model consists of multiple transformer layers. Each layer applies
+self attention and feed forward networks. The attention mechanism computes
+relationships between all pairs of tokens.
+
+The final layer produces logits. Logits are raw scores for each possible
+output token. Higher logits indicate more probable tokens.
+
+Output Generation
+For text generation, the model uses autoregressive decoding. It predicts
+one token at a time, feeding each new token back into the model.
+
+At each step, the model computes logits for the next token. The softmax
+function converts logits to probabilities. The system samples from the
+probability distribution to choose the next token.
+
+Generation continues until the model predicts an end of sequence token
+or reaches the maximum length of 200 tokens.
+
+The sequence of token IDs is converted back to text by the tokenizer.
+The tokenizer maps each ID to its corresponding word or subword and
+concatenates them with spaces.
+
+Post Processing
+The generated text may contain artifacts like repetition or incomplete
+sentences. A post processing step cleans these issues.
+
+The system also checks for hallucinations. It verifies that factual claims
+in the generated text appear in the retrieved documents. Claims without
+supporting evidence are flagged and the confidence score is reduced.
+
+Finally, the PHI detector scans the generated text. Any detected PHI is
+redacted or the response is blocked entirely depending on the user's
+permissions.
+
+================================================================================
+STREAMING DATA FLOW
+================================================================================
+
+For long responses, the system can stream text as it generates.
+
+WebSocket Connection Setup
+The client initiates a WebSocket connection to the streaming endpoint.
+The connection upgrade request includes the authentication token as a
+query parameter.
+
+The server validates the token and accepts the connection. It stores the
+WebSocket object in a connection manager keyed by user ID.
+
+The server sends a welcome message confirming the connection is ready.
+The client receives this and knows streaming can begin.
+
+Streaming Request Processing
+The client sends a JSON message over the WebSocket containing the query.
+The server receives this and begins processing through the same pipeline
+as a regular request.
+
+The key difference is in response delivery. Instead of waiting for the
+complete response, the server streams chunks as they are generated.
+
+The generation loop produces one sentence at a time. After each sentence,
+the server sends a WebSocket message with type chunk and the sentence text.
+The client receives this and appends it to the chat display.
+
+When generation completes, the server sends a final message with type
+complete. This message includes the metadata like agent name and confidence
+score that would normally be in the HTTP response body.
+
+The client uses this metadata to update the UI with agent attribution and
+confidence indicators.
+
+Connection Management
+The connection manager tracks all active WebSocket connections. If a user
+disconnects, the manager removes their connection and cancels any ongoing
+generation for that user.
+
+Heartbeat messages are sent every 30 seconds. If the client does not respond
+to a heartbeat, the server assumes the connection is dead and closes it.
+
+This cleanup prevents resource leaks from abandoned connections.
+
+================================================================================
+BATCH DATA FLOW
+================================================================================
+
+Some processing happens in batch mode rather than real time.
+
+Model Training Data Flow
+Training data flows from the database to the training pipeline.
+
+The data extraction query selects patient records, lab results, and outcomes
+from the past year. The query excludes any patients who have not consented
+to research use.
+
+The extracted data is anonymized by the privacy agent. All PHI is removed
+or generalized. The anonymized dataset is saved as a Parquet file in cloud
+storage.
+
+The training pipeline reads this file and splits it into training, validation,
+and test sets. The split is stratified by outcome to ensure balanced classes.
+
+Each batch of data during training flows from storage to GPU memory. The
+data loader prefetches batches asynchronously to keep the GPU busy.
+
+After training, the model weights are saved to cloud storage. A new version
+is registered in the model registry with metadata about training data and
+performance.
+
+Report Generation Data Flow
+Daily reports are generated as batch jobs at 2 AM.
+
+The report job queries the operations database for the previous day's data.
+It calculates key performance indicators like average length of stay,
+readmission rates, and bed utilization.
+
+The Medical Director Intelligence Agent processes this data. It generates
+natural language summaries highlighting significant changes and anomalies.
+
+The report is formatted as HTML and PDF. It is stored in cloud storage and
+a link is emailed to the Medical Director.
+
+This batch processing shifts load to off peak hours when real time query
+volume is low.
+
+================================================================================
+ERROR DATA FLOW
+================================================================================
+
+When errors occur, data flows to error handling systems.
+
+Error Detection
+Errors are caught at multiple levels. Python exceptions are caught in try
+except blocks. Timeout errors are detected by asyncio timeouts. HTTP errors
+are detected by response status codes.
+
+Each error is wrapped in a custom exception class that adds context. The
+context includes the service name, operation being performed, and input
+parameters that may have caused the error.
+
+Error Logging
+The caught error is logged to the application log. The log includes the
+stack trace, error message, and context dictionary.
+
+The log entry is sent to Elasticsearch through the logging pipeline. The
+Elasticsearch index for errors is configured with a mapping that allows
+efficient searching by error type and service.
+
+The log also includes a unique error ID. This ID can be shown to users
+so support staff can find the corresponding log entry.
+
+Error Response
+For API requests, the system returns a JSON error response. The response
+includes a user friendly message explaining what went wrong. It includes
+the error ID for support reference.
+
+The response never includes technical details like stack traces. Those
+could expose internal system information to attackers.
+
+For WebSocket connections, the error is sent as a JSON message with type
+error. The WebSocket remains open so the client can retry.
+
+Error Aggregation
+A background job aggregates errors by type every hour. It counts how many
+times each error occurred and calculates trends.
+
+If an error rate exceeds a threshold, the alerting system is triggered.
+Prometheus Alertmanager sends notifications to the on call engineer via
+PagerDuty.
+
+The aggregated errors are displayed in a dashboard for operations teams.
+The dashboard shows which services have the most errors and which error
+types are most common.
+
+================================================================================
+AUDIT DATA FLOW
+================================================================================
+
+All data accesses flow through the audit logging system.
+
+Audit Event Generation
+Every data access method in the code includes an audit call. The call
+happens after the access completes so it can log the result.
+
+The audit event includes the user ID making the request, the timestamp,
+the type of data accessed such as patient or operational, the specific
+identifiers accessed like patient ID, the purpose of access from the
+request context, and the result of the access such as success or failure.
+
+The audit event is created as a Python dictionary. It is sent asynchronously
+to the audit service so it does not block the main request.
+
+Audit Service Processing
+The audit service receives events through a queue. This decouples event
+generation from event processing. If the audit service is slow, requests
+are not delayed.
+
+The service validates that the event has all required fields. It checks
+that the user ID is valid and the data type is recognized.
+
+The validated event is written to two destinations. First, it is written
+to Elasticsearch for searching and analysis. Second, it is written to a
+WORM write once read many storage system for legal compliance.
+
+The WORM storage ensures audit logs cannot be altered after creation.
+This satisfies regulatory requirements for audit trail immutability.
+
+Audit Querying
+Compliance officers can query audit logs through a secure interface. The
+interface requires two factor authentication and logs all queries.
+
+Queries can filter by user ID, date range, data type, or patient ID.
+Results are displayed in a table and can be exported to CSV for offline
+analysis.
+
+The audit system automatically redacts sensitive information from query
+results. Only compliance officers with special permission can see the
+full details.
+
+Alerting on Audit Events
+Certain audit events trigger immediate alerts. Access to a patient record
+by a user not in that patient's care team generates an alert. Access to
+large numbers of records in a short time generates an alert.
+
+The alerting system uses a rule engine. Rules are defined in YAML files
+and can be updated without code changes. Each rule specifies a condition
+and an action.
+
+Actions include sending an email to the compliance officer, creating a
+ticket in the incident management system, or blocking further access
+from that user.
+
+================================================================================
+DATA RETENTION AND PURGING
+================================================================================
+
+Data flows through retention policies that determine how long it is kept.
+
+Conversation Data Retention
+Conversation histories are kept for 30 days in Redis. After 30 days of
+inactivity, the key expires and is automatically deleted.
+
+For compliance, a summary of each conversation is retained for one year.
+The summary includes the conversation ID, start and end times, number of
+messages, and agents used. The actual message content is deleted.
+
+This balances the need for auditability with privacy concerns. Investigators
+can see that a conversation happened but cannot see what was said without
+special authorization.
+
+Audit Log Retention
+Audit logs are retained for seven years to comply with healthcare regulations.
+After seven years, logs are automatically deleted.
+
+The deletion process runs monthly. It identifies logs older than seven years
+and removes them from Elasticsearch and WORM storage.
+
+Before deletion, a final backup is created and stored offline for an
+additional year. This provides a safety net in case a legal hold requires
+older logs.
+
+Model Training Data Retention
+Data used for model training is retained indefinitely. However, the data
+is fully anonymized before training. No PHI remains in training datasets.
+
+The anonymization process is irreversible. Patient identities cannot be
+recovered from training data even with unlimited computing power.
+
+This permanent retention allows the system to learn from historical data
+without privacy risks. As more data accumulates, model accuracy improves.
+
+Backup Data Flow
+All databases are backed up daily. Backups flow to encrypted cloud storage
+in a different geographic region.
+
+The backup process uses point in time recovery. This allows restoring to
+any moment in the last 30 days, not just the last backup.
+
+Backups are tested monthly by restoring to a test environment. The test
+verifies that backups are not corrupted and can be restored successfully.

@@ -1,0 +1,27 @@
+# Service for Frontend access
+
+apiVersion: v1
+kind: Service
+
+metadata:
+  name: frontend-service
+  namespace: medintel
+  labels:
+    app: aegismedbot
+    component: frontend
+    tier: frontend
+
+spec:
+  selector:
+    app: aegismedbot
+    component: frontend
+    tier: frontend
+  
+  ports:
+  - port: 80
+    targetPort: 7860
+    protocol: TCP
+    name: http
+  
+  type: ClusterIP
+  # Internal service - exposed externally via Ingress

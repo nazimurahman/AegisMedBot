@@ -1,0 +1,271 @@
+"""
+Grafana Dashboard Configuration - Agent Activity Monitoring
+This dashboard tracks the behavior, performance, and interactions of all AI agents
+in the multi-agent system, providing insights into agent effectiveness and usage patterns.
+"""
+
+{
+  "dashboard": {
+    "title": "MedIntel - Agent Activity Dashboard",
+    "description": "Comprehensive monitoring of agent interactions, performance metrics, and user engagement across all specialized agents",
+    "tags": ["agents", "activity", "conversations"],
+    "timezone": "browser",
+    "refresh": "30s",
+    "panels": [
+      {
+        "title": "Agent Request Distribution",
+        "type": "piechart",
+        "gridPos": {"x": 0, "y": 0, "w": 6, "h": 8},
+        "targets": [
+          {
+            "expr": "sum by(agent_name) (agent_requests_total)",
+            "legendFormat": "{{agent_name}}",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "short",
+            "decimals": 0
+          }
+        },
+        "description": "Distribution of requests across different agent types, showing which agents are most frequently used"
+      },
+      {
+        "title": "Agent Response Time",
+        "type": "graph",
+        "gridPos": {"x": 6, "y": 0, "w": 9, "h": 8},
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.5, rate(agent_processing_time_seconds_bucket[5m]))",
+            "legendFormat": "Median - {{agent_name}}",
+            "refId": "A"
+          },
+          {
+            "expr": "histogram_quantile(0.95, rate(agent_processing_time_seconds_bucket[5m]))",
+            "legendFormat": "95th - {{agent_name}}",
+            "refId": "B"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "s",
+            "decimals": 2
+          }
+        },
+        "description": "Agent processing time showing median and 95th percentile response latencies"
+      },
+      {
+        "title": "Agent Confidence Scores",
+        "type": "graph",
+        "gridPos": {"x": 15, "y": 0, "w": 9, "h": 8},
+        "targets": [
+          {
+            "expr": "avg(agent_response_confidence) by (agent_name)",
+            "legendFormat": "{{agent_name}}",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percent",
+            "min": 0,
+            "max": 100,
+            "thresholds": {
+              "steps": [
+                {"value": null, "color": "red"},
+                {"value": 50, "color": "yellow"},
+                {"value": 75, "color": "green"}
+              ]
+            }
+          }
+        },
+        "description": "Average confidence scores per agent - lower scores may indicate need for retraining"
+      },
+      {
+        "title": "Human Escalation Rate",
+        "type": "graph",
+        "gridPos": {"x": 0, "y": 8, "w": 8, "h": 6},
+        "targets": [
+          {
+            "expr": "rate(agent_human_escalations_total[5m]) / rate(agent_requests_total[5m]) * 100",
+            "legendFormat": "{{agent_name}}",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percent",
+            "min": 0,
+            "max": 100
+          }
+        },
+        "description": "Percentage of requests escalated to human operators - high rates indicate agent limitations"
+      },
+      {
+        "title": "Tool Usage Frequency",
+        "type": "bargauge",
+        "gridPos": {"x": 8, "y": 8, "w": 8, "h": 6},
+        "targets": [
+          {
+            "expr": "sum by(tool_name) (agent_tool_calls_total)",
+            "legendFormat": "{{tool_name}}",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "short",
+            "decimals": 0
+          }
+        },
+        "description": "Frequency of tool calls by each agent, showing which tools are most utilized"
+      },
+      {
+        "title": "Conversation Duration",
+        "type": "graph",
+        "gridPos": {"x": 16, "y": 8, "w": 8, "h": 6},
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.95, rate(conversation_duration_seconds_bucket[1h]))",
+            "legendFormat": "95th Percentile",
+            "refId": "A"
+          },
+          {
+            "expr": "avg(conversation_duration_seconds)",
+            "legendFormat": "Average",
+            "refId": "B"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "s"
+          }
+        },
+        "description": "Conversation duration metrics showing how long users interact with the system"
+      },
+      {
+        "title": "Agent Success Rate",
+        "type": "gauge",
+        "gridPos": {"x": 0, "y": 14, "w": 6, "h": 6},
+        "targets": [
+          {
+            "expr": "(1 - (sum(agent_errors_total) / sum(agent_requests_total))) * 100",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percent",
+            "min": 0,
+            "max": 100,
+            "thresholds": {
+              "steps": [
+                {"value": null, "color": "red"},
+                {"value": 90, "color": "yellow"},
+                {"value": 99, "color": "green"}
+              ]
+            }
+          }
+        },
+        "description": "Overall agent success rate across all agents - percentage of requests completed without errors"
+      },
+      {
+        "title": "Active Conversations",
+        "type": "stat",
+        "gridPos": {"x": 6, "y": 14, "w": 3, "h": 3},
+        "targets": [
+          {
+            "expr": "active_conversations_total",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "short",
+            "decimals": 0
+          }
+        },
+        "description": "Number of currently active conversations in the system"
+      },
+      {
+        "title": "User Satisfaction Score",
+        "type": "stat",
+        "gridPos": {"x": 9, "y": 14, "w": 3, "h": 3},
+        "targets": [
+          {
+            "expr": "avg(user_satisfaction_score)",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percent",
+            "min": 0,
+            "max": 100
+          }
+        },
+        "description": "Average user satisfaction rating from feedback (0-100 scale)"
+      },
+      {
+        "title": "Agent Error Types",
+        "type": "table",
+        "gridPos": {"x": 12, "y": 14, "w": 12, "h": 6},
+        "targets": [
+          {
+            "expr": "topk(10, agent_errors_total)",
+            "legendFormat": "{{error_type}}",
+            "refId": "A"
+          }
+        ],
+        "description": "Most common error types encountered by agents"
+      },
+      {
+        "title": "Agent Collaboration Patterns",
+        "type": "graph",
+        "gridPos": {"x": 0, "y": 20, "w": 12, "h": 8},
+        "targets": [
+          {
+            "expr": "rate(agent_to_agent_messages_total[5m])",
+            "legendFormat": "{{from_agent}} -> {{to_agent}}",
+            "refId": "A"
+          }
+        ],
+        "description": "Communication patterns between agents showing collaboration frequency"
+      },
+      {
+        "title": "Query Intent Categories",
+        "type": "bargauge",
+        "gridPos": {"x": 12, "y": 20, "w": 12, "h": 8},
+        "targets": [
+          {
+            "expr": "sum by(intent_category) (query_intent_counts)",
+            "legendFormat": "{{intent_category}}",
+            "refId": "A"
+          }
+        ],
+        "description": "Distribution of user queries by intent category"
+      }
+    ],
+    "variables": [
+      {
+        "name": "agent_name",
+        "type": "query",
+        "query": "label_values(agent_requests_total, agent_name)",
+        "multi": true,
+        "includeAll": true
+      },
+      {
+        "name": "time_range",
+        "type": "interval",
+        "query": "1h,6h,12h,24h,7d",
+        "current": {"value": "24h"}
+      }
+    ],
+    "time": {
+      "from": "now-24h",
+      "to": "now"
+    }
+  },
+  "overwrite": true
+}

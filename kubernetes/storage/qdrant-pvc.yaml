@@ -1,0 +1,38 @@
+# PersistentVolumeClaim for Qdrant vector database storage
+# Qdrant stores vector embeddings and requires fast SSD storage
+
+apiVersion: v1
+kind: PersistentVolumeClaim
+
+metadata:
+  name: qdrant-pvc
+  # Name for the Qdrant storage claim
+  
+  namespace: medintel
+  
+  labels:
+    app: aegismedbot
+    component: qdrant
+    tier: vector-database
+
+spec:
+  accessModes:
+    - ReadWriteOnce
+    # Single node read-write access - sufficient for Qdrant
+  
+  storageClassName: premium-ssd
+  # Using premium SSD storage class for better performance
+  # Vector search operations require fast random I/O
+  
+  resources:
+    requests:
+      storage: 100Gi
+      # Request 100 Gibibytes for vector embeddings
+      # Qdrant stores vectors which can be large for medical knowledge bases
+      
+  volumeMode: Filesystem
+  
+  selector:
+    matchLabels:
+      app: aegismedbot
+      component: qdrant

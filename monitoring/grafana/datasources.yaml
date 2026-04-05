@@ -1,0 +1,122 @@
+"""
+Grafana Datasource Configuration
+This file defines all data sources that Grafana connects to for metrics collection.
+Each datasource is configured with connection parameters and authentication.
+"""
+
+apiVersion: 1
+
+datasources:
+  # Datasource 1: Prometheus - Main metrics source
+  - name: Prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    editable: true
+    jsonData:
+      timeInterval: 15s
+      queryTimeout: 30s
+      httpMethod: POST
+      manageAlerts: true
+      prometheusType: Prometheus
+      prometheusVersion: 2.40.0
+      cacheLevel: High
+      disableRecordingRules: false
+      incrementalQueryOverlapWindow: 10m
+    secureJsonData:
+      httpHeaderValue1: 'Bearer ${PROMETHEUS_TOKEN}'
+    version: 1
+  
+  # Datasource 2: Elasticsearch - Log aggregation source
+  - name: Elasticsearch
+    type: elasticsearch
+    access: proxy
+    url: http://elasticsearch:9200
+    isDefault: false
+    editable: true
+    jsonData:
+      timeField: "@timestamp"
+      esVersion: 8.10.0
+      logMessageField: message
+      logLevelField: level
+      dataLinks:
+        - datasourceUid: prometheus
+          field: trace_id
+          url: '${__value.raw}'
+      interval: Daily
+      maxConcurrentShardRequests: 5
+      timeInterval: 10s
+    secureJsonData:
+      basicAuthPassword: '${ELASTIC_PASSWORD}'
+    version: 1
+  
+  # Datasource 3: PostgreSQL - Relational data source for application metrics
+  - name: PostgreSQL
+    type: postgres
+    access: proxy
+    url: postgres:5432
+    database: medintel
+    user: grafana_reader
+    isDefault: false
+    editable: true
+    jsonData:
+      sslmode: disable
+      postgresVersion: 1500
+      timescaledb: false
+    secureJsonData:
+      password: '${POSTGRES_PASSWORD}'
+    version: 1
+  
+  # Datasource 4: Loki - Log aggregation alternative for Kubernetes logs
+  - name: Loki
+    type: loki
+    access: proxy
+    url: http://loki:3100
+    isDefault: false
+    editable: true
+    jsonData:
+      maxLines: 1000
+      derivedFields:
+        - name: trace_id
+          matcherRegex: "trace_id=([a-f0-9]+)"
+          url: '${__value.raw}'
+          datasourceUid: elasticsearch
+    version: 1
+  
+  # Datasource 5: Jaeger - Distributed tracing source
+  - name: Jaeger
+    type: jaeger
+    access: proxy
+    url: http://jaeger:16686
+    isDefault: false
+    editable: true
+    jsonData:
+      nodeGraph:
+        enabled: true
+      tracesToLogs:
+        datasourceUid: loki
+        tags:
+          - key: trace_id
+            value: trace_id
+        filterByTraceID: true
+        spanStartTimeShift: '1h'
+        spanEndTimeShift: '1h'
+    version: 1
+  
+  # Datasource 6: CloudWatch - AWS metrics (if deployed on AWS)
+  - name: CloudWatch
+    type: cloudwatch
+    access: proxy
+    isDefault: false
+    editable: true
+    jsonData:
+      authType: credentials
+      defaultRegion: us-east-1
+      assumeRoleArn: '${AWS_ASSUME_ROLE_ARN}'
+      externalId: '${AWS_EXTERNAL_ID}'
+      customMetricsNamespaces: MedIntel
+    secureJsonData:
+      accessKey: '${AWS_ACCESS_KEY}'
+      secretKey: '${AWS_SECRET_KEY}'
+    version: 1  

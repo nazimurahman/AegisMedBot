@@ -1,0 +1,89 @@
+# Horizontal Pod Autoscaler for agents service
+# Scales based on custom metrics for agent processing
+
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+
+metadata:
+  name: agents-hpa
+  namespace: medintel
+  labels:
+    app: aegismedbot
+    component: agents
+    tier: ai-layer
+
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: agents
+  
+  minReplicas: 2
+  # Minimum 2 agents for redundancy
+  
+  maxReplicas: 20
+  # Maximum 20 agents during peak load
+  
+  metrics:
+  # CPU utilization
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 75
+  
+  # Memory utilization
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 85
+  
+  # Custom metric - queue length for agent tasks
+  - type: Pods
+    pods:
+      metric:
+        name: agent_queue_length
+      target:
+        type: AverageValue
+        averageValue: 10
+        # Scale if queue length exceeds 10 tasks per pod
+  
+  # Custom metric - inference latency
+  - type: Pods
+    pods:
+      metric:
+        name: agent_inference_latency_seconds
+      target:
+        type: AverageValue
+        averageValue: 2
+        # Scale if inference latency exceeds 2 seconds
+  
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 600
+      # Wait 10 minutes before scaling down to avoid thrashing
+      
+      policies:
+      - type: Percent
+        value: 25
+        periodSeconds: 60
+        # Scale down by 25% every 60 seconds
+    
+    scaleUp:
+      stabilizationWindowSeconds: 0
+      
+      policies:
+      - type: Percent
+        value: 100
+        periodSeconds: 60
+        # Double pods every 60 seconds
+      
+      - type: Pods
+        value: 5
+        periodSeconds: 60
+        # Or add up to 5 pods every 60 seconds
+      
+      selectPolicy: Max

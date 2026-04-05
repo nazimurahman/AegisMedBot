@@ -194,18 +194,32 @@ AegisMedBot/
 ├── database/
 │   ├── migrations/
 │   │   ├── versions/
-│   │   └── env.py
+│   │   │   ├── __init__.py
+│   │   │   ├── 001_initial_schema.py
+│   │   │   ├── 002_add_patient_tables.py
+│   │   │   ├── 003_add_clinical_tables.py
+│   │   │   ├── 004_add_audit_logs.py
+│   │   │   ├── 005_add_agent_metadata.py
+│   │   │   └── 006_add_analytics_views.py
+│   │   ├── __init__.py
+│   │   ├── env.py
+│   │   ├── alembic.ini
+│   │   ├── script.py.mako
+│   │   └── README.md
 │   ├── models/
+│   │   ├── __init__.py
+│   │   ├── base.py
 │   │   ├── patient.py
-│   │   ├── admission.py
-│   │   ├── treatment.py
-│   │   ├── staff.py
-│   │   └── resource.py
-│   ├── repositories/
-│   │   ├── patient_repo.py
-│   │   ├── admission_repo.py
-│   │   └── audit_repo.py
-│   └── alembic.ini
+│   │   ├── clinical.py
+│   │   ├── operational.py
+│   │   ├── agent.py
+│   │   └── audit.py
+│   └── repositories/
+│       ├── __init__.py
+│       ├── base_repository.py
+│       ├── patient_repository.py
+│       ├── clinical_repository.py
+│       └── audit_repository.py
 ├── tests/
 │   ├── unit/
 │   │   ├── test_agents.py
@@ -244,3 +258,59 @@ AegisMedBot/
 ├── pyproject.toml
 ├── poetry.lock
 └── README.md
+
+
+# 🏥 MedIntel Agentic AI Platform
+
+[![CI/CD](https://github.com/yourusername/medintel-agentic-ai/actions/workflows/ci-cd.yml/badge.svg)](https://github.com/yourusername/medintel-agentic-ai/actions/workflows/ci-cd.yml)
+[![codecov](https://codecov.io/gh/yourusername/medintel-agentic-ai/branch/main/graph/badge.svg)](https://codecov.io/gh/yourusername/medintel-agentic-ai)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
+An enterprise-grade **Agentic AI Hospital Intelligence Platform** that assists medical directors and healthcare professionals in clinical decision support, operational intelligence, patient flow monitoring, and resource management.
+
+## 🌟 Features
+
+### 🤖 Multi-Agent System
+- **Clinical Knowledge Agent**: Evidence-based medical information and guidelines
+- **Risk Prediction Agent**: Patient risk assessment and complication prediction
+- **Operations Agent**: Hospital resource management and patient flow optimization
+- **Director Intelligence Agent**: Strategic insights and KPIs for leadership
+- **Compliance Agent**: HIPAA-style privacy protection and audit logging
+- **Research Agent**: Medical literature retrieval and summarization
+
+### 🧠 Advanced AI Capabilities
+- Multi-RAG architecture with vector search
+- Transformer-based models fine-tuned for medical domain
+- Real-time streaming responses via WebSocket
+- Human-in-the-loop for critical decisions
+- Continuous learning from feedback
+
+### 🏗️ Enterprise Architecture
+- Microservices with FastAPI
+- Distributed agent orchestration
+- Horizontal scaling with Kubernetes
+- Comprehensive monitoring (Prometheus + Grafana)
+- Full audit logging (ELK Stack)
+
+### 🔒 Security & Compliance
+- HIPAA-style data protection
+- PHI detection and redaction
+- Role-based access control
+- Encrypted data transfer
+- Complete audit trails
+
+## 🚀 Quick Start
+
+### Prerequisites
+- Docker and Docker Compose
+- Kubernetes cluster (for production)
+- Python 3.11+
+- PostgreSQL 15+
+- Redis 7+
+
+### Local Development
+
+1. **Clone the repository**
+```bash
+git clone https://github.com/yourusername/medintel-agentic-ai.git
+cd medintel-agentic-ai
